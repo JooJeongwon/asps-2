@@ -28,3 +28,23 @@ test("job details query steps in the current user's scope", async () => {
   assert.equal(details?.steps[0]?.stage, "FETCH");
   assert.match(stepQuery, /user_id = \? AND job_id = \?/);
 });
+
+test("retryable failure stores the next retry time", async () => {
+  let jobArgs: unknown[] = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...args: unknown[]) {
+          if (sql.startsWith("UPDATE jobs")) jobArgs = args;
+          return {};
+        },
+      };
+    },
+    batch: async () => [],
+  } as unknown as D1Database;
+
+  const before = Date.now() + 16_000;
+  await new JobRepository(db).failStage("user-1", "job-1", "CREATE_DRAFT", "RATE_LIMITED", "retry", true, 17);
+  const nextRetryAt = Date.parse(String(jobArgs[1]));
+  assert.ok(nextRetryAt >= before && nextRetryAt <= Date.now() + 18_000);
+});

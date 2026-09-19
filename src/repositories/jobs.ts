@@ -303,16 +303,19 @@ export class JobRepository {
     const now = new Date().toISOString();
     await this.db.batch([
       this.db.prepare("UPDATE job_steps SET status = 'SUCCEEDED', output_ref = ?, finished_at = ? WHERE user_id = ? AND job_id = ? AND stage = ?").bind(outputRef, now, userId, jobId, stage),
-      this.db.prepare(`UPDATE jobs SET status = ?, remote_record_id = COALESCE(?, remote_record_id), updated_at = ? WHERE user_id = ? AND id = ?`).bind(status, remoteRecordId ?? null, now, userId, jobId),
+      this.db.prepare(`UPDATE jobs SET status = ?, next_retry_at = NULL, remote_record_id = COALESCE(?, remote_record_id), updated_at = ? WHERE user_id = ? AND id = ?`).bind(status, remoteRecordId ?? null, now, userId, jobId),
     ]);
   }
 
-  async failStage(userId: string, jobId: string, stage: JobStepStage, code: string, message: string, retryable: boolean): Promise<void> {
+  async failStage(userId: string, jobId: string, stage: JobStepStage, code: string, message: string, retryable: boolean, retryAfterSeconds?: number): Promise<void> {
     const now = new Date().toISOString();
     const status = code === "AUTH_REQUIRED" ? "AUTH_REQUIRED" : retryable ? "FAILED_RETRYABLE" : "FAILED_FINAL";
+    const nextRetryAt = retryable && retryAfterSeconds !== undefined
+      ? new Date(Date.now() + retryAfterSeconds * 1000).toISOString()
+      : null;
     await this.db.batch([
       this.db.prepare("UPDATE job_steps SET status = 'FAILED', safe_error_code = ?, finished_at = ? WHERE user_id = ? AND job_id = ? AND stage = ?").bind(code, now, userId, jobId, stage),
-      this.db.prepare("UPDATE jobs SET status = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE user_id = ? AND id = ?").bind(status, code, message, now, userId, jobId),
+      this.db.prepare("UPDATE jobs SET status = ?, next_retry_at = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE user_id = ? AND id = ?").bind(status, nextRetryAt, code, message, now, userId, jobId),
     ]);
   }
 

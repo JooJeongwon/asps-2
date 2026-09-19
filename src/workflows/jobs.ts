@@ -138,11 +138,12 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
 
   const fail = async (stage: JobStepStage, error: unknown): Promise<void> => {
     const failure = safeFailure(error);
+    const delaySeconds = failure.retryable ? retryDelaySeconds(failure.retryAfter, message.attempts) : undefined;
     if (failure.code === "AUTH_REQUIRED") {
       if (error instanceof NotionApiError) await connections.markNotionAuthRequired(userId, profileId);
       if (error instanceof ThousandSchoolApiError) await connections.markThousandSchoolAuthRequired(userId, profileId);
     }
-    await jobs.failStage(userId, jobId, stage, failure.code, failure.message, failure.retryable);
+    await jobs.failStage(userId, jobId, stage, failure.code, failure.message, failure.retryable, delaySeconds);
     if (page && notionClient && failure.code !== "AUTH_REQUIRED") {
       try {
         await updatePage(notionClient, page, propertyMapping, { status: "오류", lastError: failure.code });
@@ -150,7 +151,7 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
         // Keep the original workflow failure; the page update is best effort.
       }
     }
-    if (failure.retryable) message.retry({ delaySeconds: retryDelaySeconds(failure.retryAfter, message.attempts) });
+    if (delaySeconds !== undefined) message.retry({ delaySeconds });
     else message.ack();
   };
 
