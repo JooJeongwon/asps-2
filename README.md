@@ -18,7 +18,7 @@
 - Queue consumer: Notion 조회·content hash 검증 후 작성 → 제안 → 채점 → 저장을 target stage까지 실행
 - user-scoped profile/job 조회·생성 거부 및 1000.school contract test 포함
 
-인증은 Cloudflare Access JWT를 사용한다. 로컬/배포 환경에서는 `.env.example`의 `AUTH_ISSUER`, `AUTH_AUDIENCE`, `AUTH_JWKS_URL`와 Cloudflare Secret `CREDENTIAL_ENCRYPTION_KEY`를 설정해야 한다.
+인증은 설정한 OAuth/OIDC 공급자 로그인과 HttpOnly 세션을 사용한다. OAuth 로그인은 대시보드 접근에만 필요하고, 실제 자동화는 사용자별 credential과 Queue가 서버에서 수행한다. 로컬/배포 환경에서는 `.env.example`의 `OAUTH_*` 값과 Cloudflare Secret `SESSION_SECRET`, `CREDENTIAL_ENCRYPTION_KEY`를 설정해야 한다.
 
 ## 시작
 
@@ -31,7 +31,10 @@ npm run dev
 배포 전 `wrangler.jsonc`의 D1 `database_id`를 실제 값으로 바꾸고, 다음 secret을 등록한다.
 
 - `CREDENTIAL_ENCRYPTION_KEY`
+- `OAUTH_CLIENT_SECRET`
 - `SESSION_SECRET`
 - `WEBHOOK_SIGNING_SECRET`
+
+OAuth 공급자에는 `OAUTH_REDIRECT_URI`를 callback URL로 등록한다. 브라우저 변경 요청에는 CSRF token을 자동으로 붙이며, Queue와 Notion webhook은 사용자 로그인 세션을 요구하지 않는다.
 
 Notion webhook action에는 `x-asps-webhook-secret` custom header를 설정한다. 1000.school token은 `Authorization: Bearer` header로 전송하며, 실제 계정의 인증 방식이 다르면 adapter를 조정해야 한다.

@@ -25,6 +25,17 @@ function user(row: UserRow): User {
 export class UserRepository {
   constructor(private readonly db: D1Database) {}
 
+  async getById(id: string): Promise<User | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, auth_subject, email, display_name, status, created_at, updated_at
+         FROM users WHERE id = ?`,
+      )
+      .bind(id)
+      .first<UserRow>();
+    return row ? user(row) : null;
+  }
+
   async upsertByAuthSubject(input: {
     subject: string;
     email: string | null;

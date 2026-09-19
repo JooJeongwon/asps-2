@@ -6,8 +6,8 @@
 
 ## 연결과 실행
 
-1. 사용자가 Cloudflare Access로 로그인한다.
-2. Worker가 Access JWT의 불변 `sub`를 내부 `users.id`로 mapping한다.
+1. 사용자가 OAuth/OIDC 공급자로 로그인한다.
+2. Worker가 공급자 subject를 내부 `users.id`로 mapping하고 HttpOnly 세션을 발급한다.
 3. 사용자가 본인의 Notion token, database ID, data source ID, property mapping을 등록한다.
 4. 사용자가 본인의 1000.school credential을 등록한다.
 5. 같은 사용자의 두 연결을 automation profile로 묶는다.
@@ -17,7 +17,7 @@
 9. Queue consumer가 처리 직전에 user/profile/connection/credential 상태를 다시 확인한다.
 10. Notion page와 block을 조회·검증한다.
 11. target stage에 따라 1000.school 작성 → `organize` AI 제안 → `feedback` 텍스트 채점 → 최종 PUT 저장을 실행한다.
-12. Worker 웹사이트 버튼 또는 Notion webhook action은 같은 user-scoped Queue message를 생성한다.
+12. Worker 웹사이트 버튼, 예약 실행 또는 Notion webhook action은 로그인 세션과 별개로 같은 user-scoped Queue message를 생성한다.
 
 ## 실패와 재시도
 

@@ -29,7 +29,9 @@ flowchart TD
 - `src/types/`: Worker 환경과 외부/내부 DTO를 정의한다.
 - `migrations/`: D1 schema와 사용자 소유권을 보장하는 composite foreign key를 관리한다.
 
-인증은 Cloudflare Access JWT의 `Cf-Access-Jwt-Assertion`을 사용한다. JWT의 불변 `sub`를 `users.auth_subject`에 mapping한 뒤 모든 사용자 API에 주입한다.
+인증은 설정한 OAuth/OIDC 공급자로 로그인한 뒤 발급하는 HttpOnly 세션 cookie를 사용한다. 공급자의 불변 `sub`를 `users.auth_subject`에 mapping하고, 세션에는 내부 `userId`만 담아 모든 사용자 API에 주입한다. CSRF cookie/header 검증은 브라우저 변경 요청에만 적용한다.
+
+로그인 세션은 대시보드용이고 자동화 실행의 인증 수단이 아니다. Queue consumer는 queue payload의 불투명 ID로 사용자별 profile과 암호화 credential을 다시 조회하므로 예약·재시도 실행이 브라우저 로그인에 의존하지 않는다.
 
 현재 구현된 사용자 API는 `/api/me`, `/api/me/connections/notion`, `/api/me/connections/thousand-school`, `/api/me/automation-profiles`와 profile 단건 API, `/api/jobs`와 job 단건/재시도/취소/action API, `POST /api/sync/notion`이다. Notion 버튼용 `POST /api/webhooks/notion/:connectionId`도 제공하며 custom header와 connection-scoped job 검증을 거친다. Notion sync는 `전송대기` page를 서버에서 변환·해시해 멱등 job을 Queue에 넣는다.
 
