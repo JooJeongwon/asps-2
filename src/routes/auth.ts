@@ -28,7 +28,19 @@ async function oauthJson(url: string, init: RequestInit): Promise<unknown> {
   } catch (error) {
     throw new HttpError(502, "AUTH_PROVIDER_UNAVAILABLE", "Authentication provider is unavailable", { cause: error });
   }
-  if (!response.ok) throw new HttpError(502, "AUTH_PROVIDER_ERROR", "Authentication provider rejected the request");
+  if (!response.ok) {
+    let providerCode = "unknown";
+    try {
+      const body: unknown = await response.clone().json();
+      if (body && typeof body === "object" && !Array.isArray(body)) {
+        const value = (body as Record<string, unknown>).error;
+        if (typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value)) providerCode = value;
+      }
+    } catch {
+      // Keep provider response details out of the client response.
+    }
+    throw new HttpError(502, "AUTH_PROVIDER_ERROR", `Authentication provider rejected the request (${providerCode})`);
+  }
   try {
     return await response.json();
   } catch (error) {
@@ -37,7 +49,7 @@ async function oauthJson(url: string, init: RequestInit): Promise<unknown> {
 }
 
 function oauthConfig(env: Env): void {
-  if (!env.OAUTH_TOKEN_URL || !env.OAUTH_USERINFO_URL || !env.OAUTH_CLIENT_ID || !env.OAUTH_REDIRECT_URI || !env.OAUTH_ISSUER) {
+  if (!env.OAUTH_TOKEN_URL || !env.OAUTH_USERINFO_URL || !env.OAUTH_CLIENT_ID || !env.OAUTH_CLIENT_SECRET || !env.OAUTH_REDIRECT_URI || !env.OAUTH_ISSUER) {
     throw new HttpError(500, "AUTH_NOT_CONFIGURED", "OAuth authentication is not configured");
   }
 }
@@ -57,7 +69,7 @@ async function callback(request: Request, env: Env): Promise<Response> {
     client_id: env.OAUTH_CLIENT_ID,
     code_verifier: verifier,
   });
-  if (env.OAUTH_CLIENT_SECRET) tokenRequest.set("client_secret", env.OAUTH_CLIENT_SECRET);
+  tokenRequest.set("client_secret", env.OAUTH_CLIENT_SECRET);
   const tokenData = parse(OAuthTokenSchema, await oauthJson(env.OAUTH_TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },

@@ -35,6 +35,6 @@ npm run dev
 - `SESSION_SECRET`
 - `WEBHOOK_SIGNING_SECRET`
 
-Google Cloud Console에 `OAUTH_REDIRECT_URI`와 정확히 같은 callback URL을 등록한다. Google PKCE public client는 `OAUTH_CLIENT_SECRET` 없이 동작하며, secret을 사용하는 client라면 Cloudflare Secret으로만 설정한다. client ID는 공개값이지만 client secret, session secret, credential encryption key는 저장소에 넣지 않는다. 브라우저 변경 요청에는 CSRF token을 자동으로 붙이며, Queue와 Notion webhook은 사용자 로그인 세션을 요구하지 않는다.
+Google Cloud Console에서 Web application client를 만들고 `OAUTH_REDIRECT_URI`와 정확히 같은 callback URL을 등록한다. `OAUTH_CLIENT_SECRET`은 Cloudflare Secret으로만 설정한다. client ID는 공개값이지만 client secret, session secret, credential encryption key는 저장소에 넣지 않는다. 브라우저 변경 요청에는 CSRF token을 자동으로 붙이며, Queue와 Notion webhook은 사용자 로그인 세션을 요구하지 않는다.
 
 Notion webhook action에는 `x-asps-webhook-secret` custom header를 설정한다. 1000.school token은 `Authorization: Bearer` header로 전송하며, 실제 계정의 인증 방식이 다르면 adapter를 조정해야 한다.

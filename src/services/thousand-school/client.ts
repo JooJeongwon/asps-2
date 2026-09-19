@@ -71,7 +71,7 @@ export class ThousandSchoolClient {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.headers = new Headers(options.headers);
     this.requestId = options.requestId ?? crypto.randomUUID();
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 

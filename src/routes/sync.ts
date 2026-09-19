@@ -24,7 +24,7 @@ async function input(request: Request): Promise<{ profileId: string }> {
 
 function notionError(error: NotionApiError): HttpError {
   if (error.code === "AUTH_REQUIRED") return new HttpError(401, "AUTH_REQUIRED", "Notion authentication required");
-  return new HttpError(502, "NOTION_SYNC_FAILED", "Notion sync failed", { cause: error });
+  return new HttpError(502, "NOTION_SYNC_FAILED", `Notion sync failed (${error.code}${error.status ? ` ${error.status}` : ""})`, { cause: error });
 }
 
 export async function handleNotionSync(request: Request, env: Env, user: User, requestId: string): Promise<Response> {

@@ -48,7 +48,7 @@ export class NotionClient {
     this.token = options.token;
     this.version = options.version ?? NOTION_VERSION;
     this.requestId = options.requestId ?? crypto.randomUUID();
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 

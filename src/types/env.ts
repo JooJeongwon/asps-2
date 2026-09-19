@@ -10,6 +10,6 @@ export interface Env {
   OAUTH_TOKEN_URL: string;
   OAUTH_USERINFO_URL: string;
   OAUTH_CLIENT_ID: string;
-  OAUTH_CLIENT_SECRET?: string;
+  OAUTH_CLIENT_SECRET: string;
   OAUTH_REDIRECT_URI: string;
 }
