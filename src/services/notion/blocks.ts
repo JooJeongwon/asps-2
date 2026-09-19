@@ -147,14 +147,21 @@ function propertyText(value: unknown): string | null {
   return null;
 }
 
+function dateOnly(value: string | null): string | null {
+  const match = value?.match(/^(\d{4}-\d{2}-\d{2})(?:T|$)/);
+  return match?.[1] ?? null;
+}
+
 export async function toNotionDraft(page: NotionPage, blocks: NotionBlock[], mapping: NotionPropertyMapping): Promise<NotionDraft> {
   const content = blocksToPlainText(blocks);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
   const contentHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const warnings: string[] = [];
-  const targetDate = propertyText(propertyValue(page, mapping.date));
+  const rawTargetDate = propertyText(propertyValue(page, mapping.date));
+  const targetDate = dateOnly(rawTargetDate);
   const status = propertyText(propertyValue(page, mapping.status));
-  if (!targetDate) warnings.push("missing_date_property");
+  if (!rawTargetDate) warnings.push("missing_date_property");
+  else if (!targetDate) warnings.push("invalid_date_property");
   if (!content) warnings.push("empty_content");
   if (hasUnsupportedBlock(blocks)) warnings.push("unsupported_block");
   return {

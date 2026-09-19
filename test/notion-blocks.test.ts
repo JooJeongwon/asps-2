@@ -40,3 +40,13 @@ test("Notion result mapping writes the job ID and feedback", () => {
     Feedback: { rich_text: [{ type: "text", text: { content: "좋습니다" } }] },
   });
 });
+
+test("Notion date-time values become daily dates", async () => {
+  const draft = await toNotionDraft(
+    { id: "page-2", properties: { Date: { type: "date", date: { start: "2026-09-19T09:30:00.000+09:00" } } } },
+    [block("paragraph", { rich_text: [{ plain_text: "content" }] })],
+    { date: "Date" },
+  );
+  assert.equal(draft.targetDate, "2026-09-19");
+  assert.equal(draft.warnings.includes("invalid_date_property"), false);
+});
