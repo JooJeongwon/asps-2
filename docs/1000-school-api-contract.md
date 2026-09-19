@@ -50,7 +50,7 @@
 
 기본 timeout은 10초다. API가 제공하는 `Retry-After` 해석은 아직 adapter에 없고, Queue workflow를 붙일 때 추가해야 한다.
 
-## 자동화 단계와 차단 사항
+## 자동화 단계와 승인된 MVP 매핑
 
 OpenAPI에서 다음 endpoint는 확인되지 않았다.
 
@@ -59,7 +59,18 @@ OpenAPI에서 다음 endpoint는 확인되지 않았다.
 - 최종 저장 전용 endpoint
 - write timeout 뒤 idempotency 조회 endpoint
 
-`organize`는 `organized_content`를 반환하지만 AI 제안으로, `feedback`은 날짜별 feedback으로 보이지만 AI 점수로 임의 매핑하지 않는다. 따라서 작성 → AI 제안 → AI 채점 → 저장 workflow와 실제 credential 기반 write는 공식 계약 또는 별도 승인된 계약이 생길 때까지 보류한다.
+사용자 승인에 따라 MVP에서는 다음처럼 매핑한다.
+
+| 내부 단계 | API | 저장 결과 |
+| --- | --- | --- |
+| 작성 | `POST /daily-snippets` 또는 기존 ID에 `PUT /daily-snippets/{snippet_id}` | remote snippet ID |
+| AI 제안 | `POST /daily-snippets/organize` | `organized_content`를 Notion suggestion property에 기록 |
+| AI 채점 | `GET /daily-snippets/feedback` | `feedback` 텍스트를 Notion score/feedback property에 기록 |
+| 저장 | `PUT /daily-snippets/{snippet_id}` | AI 제안 내용을 최종 content로 반영 |
+
+`feedback`은 숫자 점수가 아니라 텍스트이므로, 숫자 점수가 필요한 사용자는 별도 변환 계약이 필요하다. `GET /daily-snippets/feedback`은 snippet ID를 받지 않고 인증된 사용자의 현재 daily snippet을 대상으로 하므로, 요청 날짜가 job의 `targetDate`와 같은지 검증한다.
+
+이 매핑은 공식 API의 명시적 단계명이 아닌 사용자 승인에 따른 MVP 해석이다. 실제 운영에서 의미가 달라지면 adapter 계약을 분리해 교체한다.
 
 ## Sanitized contract test
 

@@ -65,6 +65,11 @@ const APP_HTML = `<!doctype html>
         <label>제목 property<input name="title" value="제목"></label>
         <label>날짜 property<input name="date" value="날짜" required></label>
         <label>상태 property<input name="status" value="상태" required></label>
+        <label>ASPS job ID property<input name="jobId" value="ASPS Job ID"></label>
+        <label>1000.school ID property<input name="remoteId" value="1000school ID"></label>
+        <label>AI 제안 property<input name="suggestion" value="AI 제안"></label>
+        <label>AI 채점/피드백 property<input name="score" value="AI 피드백"></label>
+        <label>마지막 오류 property<input name="lastError" value="마지막 오류"></label>
         <div class="row"><button type="submit">저장</button><button class="secondary" data-disconnect="notion" type="button">연결 해제</button></div>
       </form>
       <form id="school-form">
@@ -123,10 +128,11 @@ const APP_HTML = `<!doctype html>
         const steps = stageNames.map((stage, stepIndex) => '<span class="step ' + (stepIndex <= index ? 'done' : '') + '">' + stage + '</span>').join('');
         const failure = job.lastErrorCode ? '<div class="error">' + escapeHtml(job.lastErrorCode) + ': ' + escapeHtml(job.lastErrorMessage) + '</div>' : '';
         const retry = ['FAILED_RETRYABLE', 'FAILED_FINAL', 'AUTH_REQUIRED'].includes(job.status) ? '<button class="secondary" data-retry-job="' + escapeHtml(job.id) + '" type="button">실패 단계 재시도</button>' : '';
-        return '<article class="job"><div class="row"><strong>' + escapeHtml(job.status) + '</strong><span class="muted">' + escapeHtml(job.targetDate) + '</span><span class="muted">page <code>' + escapeHtml(job.notionPageId) + '</code></span><button class="secondary" data-job-detail="' + escapeHtml(job.id) + '" type="button">상세</button>' + retry + '</div><div class="steps">' + steps + '</div>' + failure + '</article>';
+        const actions = job.status === 'SAVED' || job.status === 'CANCELLED' ? '' : '<button class="secondary" data-job-action="SUGGEST" data-job-id="' + escapeHtml(job.id) + '" type="button">AI 제안</button><button class="secondary" data-job-action="SCORE" data-job-id="' + escapeHtml(job.id) + '" type="button">AI 채점</button><button data-job-action="SAVE" data-job-id="' + escapeHtml(job.id) + '" type="button">저장</button>';
+        return '<article class="job"><div class="row"><strong>' + escapeHtml(job.status) + '</strong><span class="muted">' + escapeHtml(job.targetDate) + '</span><span class="muted">page <code>' + escapeHtml(job.notionPageId) + '</code></span><button class="secondary" data-job-detail="' + escapeHtml(job.id) + '" type="button">상세</button>' + actions + retry + '</div><div class="steps">' + steps + '</div>' + failure + '</article>';
       }).join('');
     };
-    const showJobDetail = async (jobId) => { setMessage('job 상세를 불러오는 중…'); try { const job = await api('/api/jobs/' + encodeURIComponent(jobId)); const steps = (job.steps || []).map((step) => '<li><strong>' + escapeHtml(step.stage) + '</strong> · ' + escapeHtml(step.status) + ' · 시도 ' + escapeHtml(step.attemptCount) + (step.safeErrorCode ? ' · ' + escapeHtml(step.safeErrorCode) : '') + '</li>').join(''); $('#job-detail').innerHTML = '<div class="card"><h3>Job 상세</h3><div class="muted"><code>' + escapeHtml(job.id) + '</code> · ' + escapeHtml(job.status) + '</div><ol>' + (steps || '<li>단계 정보가 없습니다.</li>') + '</ol></div>'; setMessage(''); } catch (error) { setMessage(error.message, 'error'); } };
+    const showJobDetail = async (jobId) => { setMessage('job 상세를 불러오는 중…'); try { const job = await api('/api/jobs/' + encodeURIComponent(jobId)); const steps = (job.steps || []).map((step) => '<li><strong>' + escapeHtml(step.stage) + '</strong> · ' + escapeHtml(step.status) + ' · 시도 ' + escapeHtml(step.attemptCount) + (step.safeErrorCode ? ' · ' + escapeHtml(step.safeErrorCode) : '') + (step.outputRef ? '<pre>' + escapeHtml(step.outputRef) + '</pre>' : '') + '</li>').join(''); $('#job-detail').innerHTML = '<div class="card"><h3>Job 상세</h3><div class="muted"><code>' + escapeHtml(job.id) + '</code> · ' + escapeHtml(job.status) + '</div><ol>' + (steps || '<li>단계 정보가 없습니다.</li>') + '</ol></div>'; setMessage(''); } catch (error) { setMessage(error.message, 'error'); } };
     const render = () => {
       const me = state.me;
       $('#account').innerHTML = '<span class="status">' + escapeHtml(me.user.displayName || me.user.email || me.user.id) + '</span> · ' + escapeHtml(me.user.status);
@@ -141,7 +147,7 @@ const APP_HTML = `<!doctype html>
       renderJobs();
     };
     const load = async () => { setMessage('불러오는 중…'); try { const values = await Promise.all([api('/api/me'), api('/api/jobs?limit=50')]); state.me = values[0]; state.jobs = values[1]; render(); setMessage(''); } catch (error) { setMessage(error.message, 'error'); } };
-    $('#notion-form').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); data.propertyMapping = { title: data.title, date: data.date, status: data.status }; delete data.title; delete data.date; delete data.status; setMessage('저장 중…'); try { await api('/api/me/connections/notion', { method: 'PUT', body: JSON.stringify(data) }); form.reset(); setMessage('Notion 연결을 저장했습니다.', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); } });
+    $('#notion-form').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); data.propertyMapping = { title: data.title, date: data.date, status: data.status, jobId: data.jobId, remoteId: data.remoteId, suggestion: data.suggestion, score: data.score, lastError: data.lastError }; delete data.title; delete data.date; delete data.status; delete data.jobId; delete data.remoteId; delete data.suggestion; delete data.score; delete data.lastError; setMessage('저장 중…'); try { await api('/api/me/connections/notion', { method: 'PUT', body: JSON.stringify(data) }); form.reset(); setMessage('Notion 연결을 저장했습니다.', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); } });
     $('#school-form').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); if (data.expiresAt) data.expiresAt = new Date(data.expiresAt).toISOString(); else delete data.expiresAt; setMessage('저장 중…'); try { await api('/api/me/connections/thousand-school', { method: 'PUT', body: JSON.stringify(data) }); form.reset(); setMessage('1000.school 연결을 저장했습니다.', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); } });
     $('#profile-form').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const editId = form.dataset.editId; const data = Object.fromEntries(new FormData(form)); setMessage('저장 중…'); try { await api(editId ? '/api/me/automation-profiles/' + encodeURIComponent(editId) : '/api/me/automation-profiles', { method: editId ? 'PUT' : 'POST', body: JSON.stringify(data) }); form.reset(); delete form.dataset.editId; $('#profile-submit').textContent = 'Profile 생성'; setMessage('Profile을 저장했습니다.', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); } });
     $('#refresh').addEventListener('click', load);
@@ -158,6 +164,9 @@ const APP_HTML = `<!doctype html>
       if (jobId) { await showJobDetail(jobId); return; }
       const retryId = button.dataset.retryJob;
       if (retryId) { setMessage('재시도 중…'); try { await api('/api/jobs/' + encodeURIComponent(retryId) + '/retry', { method: 'POST' }); setMessage('재시도를 등록했습니다.', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); } return; }
+      const action = button.dataset.jobAction;
+      const actionJobId = button.dataset.jobId;
+      if (action && actionJobId) { if (action === 'SAVE' && !confirm('AI 제안 내용을 1000.school에 저장할까요?')) return; button.disabled = true; setMessage(action + ' 실행을 등록하는 중…'); try { await api('/api/jobs/' + encodeURIComponent(actionJobId) + '/action', { method: 'POST', body: JSON.stringify({ action }) }); setMessage(action + ' 실행을 등록했습니다.', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); button.disabled = false; } return; }
       const syncId = button.dataset.syncProfile;
       if (syncId) { setMessage('Notion을 동기화 중…'); try { const result = await api('/api/sync/notion', { method: 'POST', body: JSON.stringify({ profileId: syncId }) }); setMessage('동기화 완료 · ' + result.queued + '개 job 등록', 'ok'); await load(); } catch (error) { setMessage(error.message, 'error'); } }
     });

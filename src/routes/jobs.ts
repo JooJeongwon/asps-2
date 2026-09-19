@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { HttpError } from "../lib/errors";
 import { json, empty } from "../lib/http";
-import { JobRepository, type JobMode } from "../repositories/jobs";
+import { AuditRepository } from "../repositories/audit";
+import { JobRepository, targetStageForMode, type JobMode, type JobTargetStage } from "../repositories/jobs";
 import type { Env } from "../types/env";
 import type { User } from "../types/domain";
 
 const Mode = z.enum(["DRAFT_ONLY", "SUGGEST", "SCORE", "SAVE", "FULL_AUTO"]);
+const Action = z.enum(["SUGGEST", "SCORE", "SAVE"]);
 const CreateJobInput = z.object({
   profileId: z.string().min(1),
   notionPageId: z.string().min(1),
@@ -30,8 +32,8 @@ function method(request: Request, allowed: string[]): void {
   if (!allowed.includes(request.method)) throw new HttpError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
 }
 
-function message(user: User, jobId: string, profileId: string) {
-  return { userId: user.id, jobId, profileId };
+function message(user: User, jobId: string, profileId: string, targetStage: JobTargetStage) {
+  return { userId: user.id, jobId, profileId, targetStage };
 }
 
 export async function handleJobs(request: Request, env: Env, user: User): Promise<Response> {
@@ -47,7 +49,7 @@ export async function handleJobs(request: Request, env: Env, user: User): Promis
     const input = await body(request, CreateJobInput);
     const result = await repository.create({ ...input, userId: user.id, mode: input.mode as JobMode });
     if (result.created || ["PENDING", "FAILED_RETRYABLE"].includes(result.job.status)) {
-      await env.JOB_QUEUE.send(message(user, result.job.id, result.job.profileId));
+      await env.JOB_QUEUE.send(message(user, result.job.id, result.job.profileId, targetStageForMode(result.job.mode)));
     }
     return json(result.job, { status: result.created ? 202 : 200 });
   }
@@ -71,8 +73,23 @@ export async function handleJobs(request: Request, env: Env, user: User): Promis
     }
     if (action === "retry") {
       const job = await repository.retry(user.id, jobId);
-      await env.JOB_QUEUE.send(message(user, job.id, job.profileId));
+      await env.JOB_QUEUE.send(message(user, job.id, job.profileId, targetStageForMode(job.mode)));
       return json(job, { status: 202 });
+    }
+    if (action === "action") {
+      const parsed = await body(request, z.object({ action: Action }));
+      const job = await repository.get(user.id, jobId);
+      if (!job) return json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
+      if (job.status === "CANCELLED") throw new HttpError(409, "JOB_CANCELLED", "Job is cancelled");
+      const targetStage: JobTargetStage = parsed.action === "SUGGEST"
+        ? "AI_SUGGESTED"
+        : parsed.action === "SCORE"
+          ? "AI_SCORED"
+          : "SAVED";
+      if (job.status === "SAVED") return json(job);
+      await env.JOB_QUEUE.send(message(user, job.id, job.profileId, targetStage));
+      await new AuditRepository(env.DB).record({ userId: user.id, action: `JOB_${parsed.action}_REQUESTED`, targetType: "job", targetId: job.id });
+      return json({ ...job, requestedStage: targetStage }, { status: 202 });
     }
   }
 

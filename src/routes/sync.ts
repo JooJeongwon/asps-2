@@ -2,9 +2,9 @@ import { z } from "zod";
 import { HttpError } from "../lib/errors";
 import { json } from "../lib/http";
 import { ConnectionRepository } from "../repositories/connections";
-import { JobRepository, type JobMode } from "../repositories/jobs";
+import { JobRepository, targetStageForMode, type JobMode } from "../repositories/jobs";
 import { NotionApiError, NotionClient } from "../services/notion/client";
-import { hydrateBlockTree, toNotionDraft } from "../services/notion/blocks";
+import { hydrateBlockTree, notionResultProperties, toNotionDraft } from "../services/notion/blocks";
 import type { User } from "../types/domain";
 import type { Env } from "../types/env";
 
@@ -60,8 +60,10 @@ export async function handleNotionSync(request: Request, env: Env, user: User, r
         contentHash: draft.contentHash,
         mode: profile.defaultMode as JobMode,
       });
+      const jobProperties = notionResultProperties(page, runtime.propertyMapping, { jobId: created.job.id });
+      if (Object.keys(jobProperties).length) await client.updatePage(page.id, jobProperties);
       if (created.created || ["PENDING", "FAILED_RETRYABLE"].includes(created.job.status)) {
-        await env.JOB_QUEUE.send({ userId: user.id, jobId: created.job.id, profileId });
+        await env.JOB_QUEUE.send({ userId: user.id, jobId: created.job.id, profileId, targetStage: targetStageForMode(created.job.mode) });
         result.queued += 1;
       } else {
         result.existing += 1;

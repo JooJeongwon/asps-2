@@ -4,6 +4,14 @@ export type JobMode = "DRAFT_ONLY" | "SUGGEST" | "SCORE" | "SAVE" | "FULL_AUTO";
 export type JobStatus = "PENDING" | "FETCHED" | "DRAFT_CREATED" | "AI_SUGGESTED" | "AI_SCORED" | "SAVED" | "FAILED_RETRYABLE" | "FAILED_FINAL" | "AUTH_REQUIRED" | "PROFILE_REQUIRED" | "CANCELLED";
 export type JobStepStage = "FETCH" | "CREATE_DRAFT" | "AI_SUGGEST" | "AI_SCORE" | "SAVE" | "NOTION_UPDATE";
 export type JobStepStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+export type JobTargetStage = "DRAFT_CREATED" | "AI_SUGGESTED" | "AI_SCORED" | "SAVED";
+
+export function targetStageForMode(mode: JobMode): JobTargetStage {
+  if (mode === "DRAFT_ONLY") return "DRAFT_CREATED";
+  if (mode === "SUGGEST") return "AI_SUGGESTED";
+  if (mode === "SCORE") return "AI_SCORED";
+  return "SAVED";
+}
 
 export interface Job {
   id: string;
@@ -27,6 +35,7 @@ export interface JobStep {
   stage: JobStepStage;
   status: JobStepStatus;
   attemptCount: number;
+  outputRef: string | null;
   safeErrorCode: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -49,6 +58,9 @@ export interface JobExecutionContext {
   credentialKeyVersion: number;
   credentialIv: string;
   encryptedPayload: string;
+  schoolCredentialKeyVersion: number;
+  schoolCredentialIv: string;
+  schoolEncryptedPayload: string;
 }
 
 interface JobRow {
@@ -93,6 +105,7 @@ function step(row: {
   stage: JobStepStage;
   status: JobStepStatus;
   attempt_count: number;
+  output_ref: string | null;
   safe_error_code: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -101,6 +114,7 @@ function step(row: {
     stage: row.stage,
     status: row.status,
     attemptCount: row.attempt_count,
+    outputRef: row.output_ref,
     safeErrorCode: row.safe_error_code,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -137,12 +151,29 @@ export class JobRepository {
     return row ? job(row) : null;
   }
 
+  async getWebhookTarget(connectionId: string, jobId: string): Promise<Job | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT j.id, j.user_id, j.profile_id, j.notion_page_id, j.target_date, j.mode, j.status, j.content_hash,
+                j.remote_record_id, j.attempt_count, j.next_retry_at, j.last_error_code, j.last_error_message,
+                j.created_at, j.updated_at
+         FROM jobs j
+         JOIN automation_profiles p ON p.id = j.profile_id AND p.user_id = j.user_id
+         JOIN notion_connections n ON n.id = p.notion_connection_id AND n.user_id = p.user_id
+         WHERE n.id = ? AND j.id = ?
+         ORDER BY j.created_at DESC LIMIT 1`,
+      )
+      .bind(connectionId, jobId)
+      .first<JobRow>();
+    return row ? job(row) : null;
+  }
+
   async getDetails(userId: string, jobId: string): Promise<JobDetails | null> {
     const current = await this.get(userId, jobId);
     if (!current) return null;
     const { results } = await this.db
       .prepare(
-        `SELECT stage, status, attempt_count, safe_error_code, started_at, finished_at
+        `SELECT stage, status, attempt_count, output_ref, safe_error_code, started_at, finished_at
          FROM job_steps WHERE user_id = ? AND job_id = ?
          ORDER BY CASE stage
            WHEN 'FETCH' THEN 1 WHEN 'CREATE_DRAFT' THEN 2 WHEN 'AI_SUGGEST' THEN 3
@@ -204,13 +235,11 @@ export class JobRepository {
     if (!createdJob) throw new Error("Job could not be loaded after insert");
 
     if (result.meta.changes === 1) {
-      await this.db
-        .prepare(
-        `INSERT INTO job_steps (id, user_id, job_id, stage, status)
-           VALUES (?, ?, ?, 'FETCH', 'PENDING')`,
-        )
-        .bind(crypto.randomUUID(), input.userId, createdJob.id)
-        .run();
+      await this.db.batch([
+        ...(["FETCH", "CREATE_DRAFT", "AI_SUGGEST", "AI_SCORE", "SAVE"] as JobStepStage[]).map((stage) => this.db
+          .prepare("INSERT INTO job_steps (id, user_id, job_id, stage, status) VALUES (?, ?, ?, ?, 'PENDING')")
+          .bind(crypto.randomUUID(), input.userId, createdJob.id, stage)),
+      ]);
     }
     return { job: job(createdJob), created: result.meta.changes === 1 };
   }
@@ -247,13 +276,13 @@ export class JobRepository {
     return result;
   }
 
-  async beginFetch(userId: string, jobId: string): Promise<boolean> {
+  async beginStage(userId: string, jobId: string, stage: JobStepStage): Promise<boolean> {
     const result = await this.db
       .prepare(
         `UPDATE job_steps SET status = 'RUNNING', attempt_count = attempt_count + 1, started_at = ?
-         WHERE user_id = ? AND job_id = ? AND stage = 'FETCH' AND status IN ('PENDING', 'FAILED')`,
+         WHERE user_id = ? AND job_id = ? AND stage = ? AND status IN ('PENDING', 'FAILED')`,
       )
-      .bind(new Date().toISOString(), userId, jobId)
+      .bind(new Date().toISOString(), userId, jobId, stage)
       .run();
     if (result.meta.changes !== 1) return false;
     await this.db
@@ -263,21 +292,39 @@ export class JobRepository {
     return true;
   }
 
-  async completeFetch(userId: string, jobId: string): Promise<void> {
+  async completeStage(
+    userId: string,
+    jobId: string,
+    stage: JobStepStage,
+    status: JobStatus,
+    outputRef: string | null = null,
+    remoteRecordId?: string,
+  ): Promise<void> {
     const now = new Date().toISOString();
     await this.db.batch([
-      this.db.prepare("UPDATE job_steps SET status = 'SUCCEEDED', finished_at = ? WHERE user_id = ? AND job_id = ? AND stage = 'FETCH'").bind(now, userId, jobId),
-      this.db.prepare("UPDATE jobs SET status = 'FETCHED', updated_at = ? WHERE user_id = ? AND id = ?").bind(now, userId, jobId),
+      this.db.prepare("UPDATE job_steps SET status = 'SUCCEEDED', output_ref = ?, finished_at = ? WHERE user_id = ? AND job_id = ? AND stage = ?").bind(outputRef, now, userId, jobId, stage),
+      this.db.prepare(`UPDATE jobs SET status = ?, remote_record_id = COALESCE(?, remote_record_id), updated_at = ? WHERE user_id = ? AND id = ?`).bind(status, remoteRecordId ?? null, now, userId, jobId),
+    ]);
+  }
+
+  async failStage(userId: string, jobId: string, stage: JobStepStage, code: string, message: string, retryable: boolean): Promise<void> {
+    const now = new Date().toISOString();
+    const status = code === "AUTH_REQUIRED" ? "AUTH_REQUIRED" : retryable ? "FAILED_RETRYABLE" : "FAILED_FINAL";
+    await this.db.batch([
+      this.db.prepare("UPDATE job_steps SET status = 'FAILED', safe_error_code = ?, finished_at = ? WHERE user_id = ? AND job_id = ? AND stage = ?").bind(code, now, userId, jobId, stage),
+      this.db.prepare("UPDATE jobs SET status = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE user_id = ? AND id = ?").bind(status, code, message, now, userId, jobId),
     ]);
   }
 
   async fail(userId: string, jobId: string, code: string, message: string, retryable: boolean): Promise<void> {
-    const now = new Date().toISOString();
-    const status = code === "AUTH_REQUIRED" ? "AUTH_REQUIRED" : retryable ? "FAILED_RETRYABLE" : "FAILED_FINAL";
-    await this.db.batch([
-      this.db.prepare("UPDATE job_steps SET status = 'FAILED', safe_error_code = ?, finished_at = ? WHERE user_id = ? AND job_id = ? AND stage = 'FETCH'").bind(code, now, userId, jobId),
-      this.db.prepare("UPDATE jobs SET status = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE user_id = ? AND id = ?").bind(status, code, message, now, userId, jobId),
-    ]);
+    await this.failStage(userId, jobId, "FETCH", code, message, retryable);
+  }
+
+  async setRemoteRecordId(userId: string, jobId: string, remoteRecordId: string): Promise<void> {
+    await this.db
+      .prepare("UPDATE jobs SET remote_record_id = ?, updated_at = ? WHERE user_id = ? AND id = ?")
+      .bind(remoteRecordId, new Date().toISOString(), userId, jobId)
+      .run();
   }
 
   async executionContext(userId: string, jobId: string, profileId: string): Promise<JobExecutionContext | null> {
@@ -290,7 +337,9 @@ export class JobRepository {
                 n.status AS notion_status, n.data_source_id, n.property_mapping_json,
                 a.status AS account_status, nc.status AS notion_credential_status,
                 ac.status AS account_credential_status, nc.key_version AS credential_key_version,
-                nc.iv AS credential_iv, nc.encrypted_payload
+                nc.iv AS credential_iv, nc.encrypted_payload,
+                ac.key_version AS school_credential_key_version,
+                ac.iv AS school_credential_iv, ac.encrypted_payload AS school_encrypted_payload
          FROM jobs j
          JOIN automation_profiles p ON p.id = j.profile_id AND p.user_id = j.user_id
          JOIN notion_connections n ON n.id = p.notion_connection_id AND n.user_id = p.user_id
@@ -312,6 +361,9 @@ export class JobRepository {
         credential_key_version: number;
         credential_iv: string;
         encrypted_payload: string;
+        school_credential_key_version: number;
+        school_credential_iv: string;
+        school_encrypted_payload: string;
       }>();
     if (!row) return null;
     return {
@@ -327,6 +379,9 @@ export class JobRepository {
       credentialKeyVersion: row.credential_key_version,
       credentialIv: row.credential_iv,
       encryptedPayload: row.encrypted_payload,
+      schoolCredentialKeyVersion: row.school_credential_key_version,
+      schoolCredentialIv: row.school_credential_iv,
+      schoolEncryptedPayload: row.school_encrypted_payload,
     };
   }
 }

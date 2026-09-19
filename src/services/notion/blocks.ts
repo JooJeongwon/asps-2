@@ -5,6 +5,11 @@ export interface NotionPropertyMapping {
   title?: string;
   date?: string;
   status?: string;
+  jobId?: string;
+  remoteId?: string;
+  suggestion?: string;
+  score?: string;
+  lastError?: string;
 }
 
 export interface NotionDraft {
@@ -68,6 +73,59 @@ export function blocksToPlainText(blocks: NotionBlock[]): string {
     }
   }
   return lines.join("\n").trim();
+}
+
+export interface NotionResultValues {
+  status?: string;
+  jobId?: string;
+  remoteId?: string;
+  suggestion?: string;
+  score?: string;
+  lastError?: string;
+}
+
+function richTextProperty(value: string): { rich_text: Array<{ type: "text"; text: { content: string } }> } {
+  return { rich_text: [{ type: "text", text: { content: value } }] };
+}
+
+function textProperty(page: NotionPage, name: string, value: string): Record<string, unknown> {
+  const type = typeof object(page.properties[name]).type === "string" ? object(page.properties[name]).type as string : "";
+  if (type === "title") return { title: [{ type: "text", text: { content: value } }] };
+  if (type === "rich_text") return richTextProperty(value);
+  throw new Error(`Notion property ${name} must be title or rich_text`);
+}
+
+function statusProperty(page: NotionPage, name: string, value: string): Record<string, unknown> {
+  const type = typeof object(page.properties[name]).type === "string" ? object(page.properties[name]).type as string : "";
+  if (type === "select") return { select: { name: value } };
+  if (type === "status") return { status: { name: value } };
+  if (type === "rich_text") return richTextProperty(value);
+  throw new Error(`Notion property ${name} must be select, status, or rich_text`);
+}
+
+function scoreProperty(page: NotionPage, name: string, value: string): Record<string, unknown> {
+  const type = typeof object(page.properties[name]).type === "string" ? object(page.properties[name]).type as string : "";
+  if (type === "rich_text" || type === "title") return textProperty(page, name, value);
+  if (type === "number") {
+    const number = Number(value);
+    if (Number.isFinite(number)) return { number };
+  }
+  throw new Error(`Notion property ${name} must be rich_text or numeric feedback`);
+}
+
+export function notionResultProperties(
+  page: NotionPage,
+  mapping: NotionPropertyMapping,
+  values: NotionResultValues,
+): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  if (mapping.status && values.status !== undefined && page.properties[mapping.status]) properties[mapping.status] = statusProperty(page, mapping.status, values.status);
+  if (mapping.jobId && values.jobId !== undefined && page.properties[mapping.jobId]) properties[mapping.jobId] = textProperty(page, mapping.jobId, values.jobId);
+  if (mapping.remoteId && values.remoteId !== undefined && page.properties[mapping.remoteId]) properties[mapping.remoteId] = textProperty(page, mapping.remoteId, values.remoteId);
+  if (mapping.suggestion && values.suggestion !== undefined && page.properties[mapping.suggestion]) properties[mapping.suggestion] = textProperty(page, mapping.suggestion, values.suggestion);
+  if (mapping.score && values.score !== undefined && page.properties[mapping.score]) properties[mapping.score] = scoreProperty(page, mapping.score, values.score);
+  if (mapping.lastError && values.lastError !== undefined && page.properties[mapping.lastError]) properties[mapping.lastError] = textProperty(page, mapping.lastError, values.lastError);
+  return properties;
 }
 
 function hasUnsupportedBlock(blocks: NotionBlock[]): boolean {

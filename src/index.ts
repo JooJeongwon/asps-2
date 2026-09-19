@@ -5,6 +5,7 @@ import { handleMe } from "./routes/me";
 import { handleJobs } from "./routes/jobs";
 import { handleNotionSync } from "./routes/sync";
 import { handleApp } from "./routes/app";
+import { handleNotionWebhook } from "./routes/webhooks";
 import { consumeJobs } from "./workflows/jobs";
 import type { Env } from "./types/env";
 import { json, requestId, withRequestId } from "./lib/http";
@@ -17,6 +18,11 @@ export default {
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
         return withRequestId(health(request), id);
+      }
+
+      if (url.pathname.startsWith("/api/webhooks/notion/")) {
+        const connectionId = decodeURIComponent(url.pathname.split("/").filter(Boolean)[3] ?? "");
+        return withRequestId(await handleNotionWebhook(request, env, connectionId), id);
       }
 
       if (url.pathname === "/") {

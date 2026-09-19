@@ -31,7 +31,7 @@ flowchart TD
 
 인증은 Cloudflare Access JWT의 `Cf-Access-Jwt-Assertion`을 사용한다. JWT의 불변 `sub`를 `users.auth_subject`에 mapping한 뒤 모든 사용자 API에 주입한다.
 
-현재 구현된 사용자 API는 `/api/me`, `/api/me/connections/notion`, `/api/me/connections/thousand-school`, `/api/me/automation-profiles`와 profile 단건 API, `/api/jobs`와 job 단건/재시도/취소 API, `POST /api/sync/notion`이다. Notion sync는 `전송대기` page를 서버에서 변환·해시해 멱등 job을 Queue에 넣는다. 외부 API 계약이 확인되기 전에는 실제 1000.school 쓰기 workflow를 추가하지 않는다.
+현재 구현된 사용자 API는 `/api/me`, `/api/me/connections/notion`, `/api/me/connections/thousand-school`, `/api/me/automation-profiles`와 profile 단건 API, `/api/jobs`와 job 단건/재시도/취소/action API, `POST /api/sync/notion`이다. Notion 버튼용 `POST /api/webhooks/notion/:connectionId`도 제공하며 custom header와 connection-scoped job 검증을 거친다. Notion sync는 `전송대기` page를 서버에서 변환·해시해 멱등 job을 Queue에 넣는다.
 
 현재 연결 API는 provider별 활성 연결 하나를 관리한다. 다중 Notion/1000.school 계정 선택이 실제 요구사항이 되면 목록/선택 API로 확장한다.
 
@@ -42,7 +42,7 @@ flowchart TD
 3. Queue에는 `userId`, `profileId`, `jobId` 같은 불투명 ID만 넣는다.
 4. consumer가 외부 호출 직전에 사용자와 credential 상태를 다시 확인한다.
 5. Queue consumer가 Notion page와 child block을 조회하고 `content_hash`를 재검증한다.
-6. 현재는 검증 성공 시 job을 `FETCHED`로 전이한다. 이후 1000.school 계약이 확정되면 작성 → AI 제안 → AI 채점 → 저장 단계를 붙인다.
+6. 검증 성공 후 target stage에 따라 작성 → `organize` AI 제안 → `feedback` 텍스트 채점 → 저장 단계를 실행한다.
 7. 성공한 단계와 `content_hash`를 D1에 기록하고, 마지막에 같은 사용자의 Notion만 갱신한다.
 
 Queue는 at-least-once이므로 `jobs`의 unique idempotency key와 조건부 상태 전이를 함께 사용한다. KV는 권한 원장이나 lock으로 사용하지 않는다. 초기에는 D1 조건부 전이로 시작하고, 실제 contention이 확인될 때만 Durable Object를 추가한다.
@@ -98,7 +98,7 @@ OpenAPI에는 `securitySchemes`가 선언되어 있지 않으므로 client는 �
 - timeout 뒤 성공 여부를 확인할 조회 방법
 - 401/403/429/5xx의 재시도·상태 변환 규칙
 
-현재 OpenAPI에는 별도 AI 채점 endpoint나 최종 저장 전용 endpoint가 없다. `organize`를 AI 제안/채점으로 임의 매핑하지 않았으며, 이 두 workflow 단계는 실제 계약이 추가로 확인될 때 구현한다.
+현재 OpenAPI에는 내부 이름과 일치하는 별도 AI 채점 endpoint나 최종 저장 전용 endpoint가 없다. 사용자 승인에 따라 `organize`를 AI 제안, `feedback`을 텍스트 AI 채점, daily snippet POST/PUT을 작성·저장으로 매핑했다. 이 매핑은 adapter 경계 안에 두어 교체할 수 있게 한다.
 
 ## 구현 순서
 

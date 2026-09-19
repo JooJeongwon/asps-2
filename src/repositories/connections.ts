@@ -161,6 +161,23 @@ export class ConnectionRepository {
     ]);
   }
 
+  async markThousandSchoolAuthRequired(userId: string, profileId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db.prepare(
+        `UPDATE thousand_school_accounts SET status = 'AUTH_REQUIRED', updated_at = ?
+         WHERE user_id = ? AND id = (SELECT thousand_school_account_id FROM automation_profiles WHERE user_id = ? AND id = ?)`,
+      ).bind(now, userId, userId, profileId),
+      this.db.prepare(
+        `UPDATE credentials SET status = 'AUTH_REQUIRED', updated_at = ?
+         WHERE user_id = ? AND id = (
+           SELECT credential_id FROM thousand_school_accounts WHERE user_id = ? AND id =
+             (SELECT thousand_school_account_id FROM automation_profiles WHERE user_id = ? AND id = ?)
+         )`,
+      ).bind(now, userId, userId, userId, profileId),
+    ]);
+  }
+
   async getThousandSchool(userId: string): Promise<ConnectionView | null> {
     const row = await this.db
       .prepare(

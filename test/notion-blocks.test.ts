@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blocksToPlainText, toNotionDraft } from "../src/services/notion/blocks.ts";
+import { blocksToPlainText, notionResultProperties, toNotionDraft } from "../src/services/notion/blocks.ts";
 
 const block = (type: string, value: Record<string, unknown>) => ({ id: crypto.randomUUID(), type, [type]: value });
 
@@ -19,4 +19,24 @@ test("Notion blocks preserve order, Korean text, emoji, and unsupported warnings
   assert.equal(draft.targetDate, "2026-09-19");
   assert.ok(draft.warnings.includes("unsupported_block"));
   assert.equal(draft.contentHash.length, 64);
+});
+
+test("Notion result mapping writes the job ID and feedback", () => {
+  const properties = notionResultProperties(
+    {
+      id: "page-1",
+      properties: {
+        Status: { type: "select" },
+        Job: { type: "rich_text" },
+        Feedback: { type: "rich_text" },
+      },
+    },
+    { status: "Status", jobId: "Job", score: "Feedback" },
+    { status: "처리중", jobId: "job-1", score: "좋습니다" },
+  );
+  assert.deepEqual(properties, {
+    Status: { select: { name: "처리중" } },
+    Job: { rich_text: [{ type: "text", text: { content: "job-1" } }] },
+    Feedback: { rich_text: [{ type: "text", text: { content: "좋습니다" } }] },
+  });
 });

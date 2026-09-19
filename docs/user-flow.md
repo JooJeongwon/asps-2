@@ -15,7 +15,9 @@
 7. 대시보드에서 Notion `전송대기` page를 동기화한다.
 8. Worker가 content hash 기반 job을 만들고 Queue에는 `userId`, `profileId`, `jobId`만 보낸다.
 9. Queue consumer가 처리 직전에 user/profile/connection/credential 상태를 다시 확인한다.
-10. Notion page와 block을 조회·검증한 뒤 현재 구현에서는 job을 `FETCHED`로 전이한다.
+10. Notion page와 block을 조회·검증한다.
+11. target stage에 따라 1000.school 작성 → `organize` AI 제안 → `feedback` 텍스트 채점 → 최종 PUT 저장을 실행한다.
+12. Worker 웹사이트 버튼 또는 Notion webhook action은 같은 user-scoped Queue message를 생성한다.
 
 ## 실패와 재시도
 
@@ -27,4 +29,4 @@
 
 ## 보류된 자동화 단계
 
-현재 API snapshot에는 AI 제안, AI 채점, 최종 저장 계약이 없다. 해당 계약이 확인되기 전에는 browser automation이나 임의 endpoint 매핑을 사용하지 않는다. 계약 확인 후에도 기본 mode는 최종 저장 전 사용자 확인으로 유지한다.
+MVP에서는 사용자 승인에 따라 `organize`를 AI 제안, `feedback`을 텍스트 AI 채점, daily snippet POST/PUT을 작성·저장으로 매핑한다. 최종 저장은 Worker 웹사이트에서 확인하거나 `SAVE` webhook action으로 명시적으로 요청한다.
