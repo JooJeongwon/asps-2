@@ -6,8 +6,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "asps",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_name": "snippets",
+      "database_id": "bdcf5e2d-143a-4554-90ac-4211ba2cf3c8",
       "migrations_dir": "migrations"
     }
   ],
