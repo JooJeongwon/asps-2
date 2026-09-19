@@ -1,0 +1,235 @@
+import { z } from "zod";
+import {
+  ApiTokenResponseSchema,
+  AuthStatusResponseSchema,
+  CreateTokenRequestSchema,
+  DailySnippetContentSchema,
+  DailySnippetFeedbackResponseSchema,
+  DailySnippetListResponseSchema,
+  DailySnippetOrganizeResponseSchema,
+  DailySnippetPageDataResponseSchema,
+  DailySnippetResponseSchema,
+  NewApiTokenResponseSchema,
+  type ApiTokenResponse,
+  type AuthStatusResponse,
+  type DailySnippetFeedbackResponse,
+  type DailySnippetListResponse,
+  type DailySnippetOrganizeResponse,
+  type DailySnippetPageDataResponse,
+  type DailySnippetResponse,
+  type NewApiTokenResponse,
+} from "./schemas";
+
+type Fetcher = typeof fetch;
+
+export interface ThousandSchoolClientOptions {
+  baseUrl: string;
+  headers?: HeadersInit;
+  requestId?: string;
+  fetcher?: Fetcher;
+  timeoutMs?: number;
+}
+
+export interface ListDailySnippetsParams {
+  limit?: number;
+  offset?: number;
+  order?: string;
+  fromDate?: string;
+  toDate?: string;
+  id?: number;
+  query?: string;
+}
+
+export interface PageDataParams {
+  id?: number;
+  date?: string;
+}
+
+export class ThousandSchoolApiError extends Error {
+  constructor(
+    readonly code: "AUTH_REQUIRED" | "RATE_LIMITED" | "UPSTREAM_ERROR" | "NETWORK_ERROR" | "INVALID_RESPONSE",
+    message: string,
+    readonly status?: number,
+    readonly retryable = false,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "ThousandSchoolApiError";
+  }
+}
+
+export class ThousandSchoolClient {
+  private readonly baseUrl: string;
+  private readonly headers: Headers;
+  private readonly requestId: string;
+  private readonly fetcher: Fetcher;
+  private readonly timeoutMs: number;
+
+  constructor(options: ThousandSchoolClientOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.headers = new Headers(options.headers);
+    this.requestId = options.requestId ?? crypto.randomUUID();
+    this.fetcher = options.fetcher ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? 10_000;
+  }
+
+  async getAuthStatus(): Promise<AuthStatusResponse> {
+    return this.request("/auth/me", { method: "GET" }, AuthStatusResponseSchema);
+  }
+
+  async listTokens(): Promise<ApiTokenResponse[]> {
+    return this.request("/auth/tokens", { method: "GET" }, z.array(ApiTokenResponseSchema));
+  }
+
+  async createToken(description: string, idempotencyKey?: string): Promise<NewApiTokenResponse> {
+    const body = CreateTokenRequestSchema.parse({ description });
+    const headers = idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined;
+    return this.request(
+      "/auth/tokens",
+      { method: "POST", headers, body: JSON.stringify(body) },
+      NewApiTokenResponseSchema,
+    );
+  }
+
+  async deleteToken(tokenId: number): Promise<void> {
+    await this.request(`/auth/tokens/${this.integer(tokenId, "tokenId")}`, { method: "DELETE" });
+  }
+
+  async listDailySnippets(params: ListDailySnippetsParams = {}): Promise<DailySnippetListResponse> {
+    const query = new URLSearchParams({ scope: "own" });
+    this.setNumber(query, "limit", params.limit);
+    this.setNumber(query, "offset", params.offset);
+    this.setString(query, "order", params.order);
+    this.setString(query, "from_date", params.fromDate);
+    this.setString(query, "to_date", params.toDate);
+    this.setNumber(query, "id", params.id);
+    this.setString(query, "q", params.query);
+    return this.request(`/daily-snippets?${query}`, { method: "GET" }, DailySnippetListResponseSchema);
+  }
+
+  async getDailySnippet(snippetId: number): Promise<DailySnippetResponse> {
+    return this.request(
+      `/daily-snippets/${this.integer(snippetId, "snippetId")}`,
+      { method: "GET" },
+      DailySnippetResponseSchema,
+    );
+  }
+
+  async createDailySnippet(content: string): Promise<DailySnippetResponse> {
+    return this.request(
+      "/daily-snippets",
+      { method: "POST", body: JSON.stringify(DailySnippetContentSchema.parse({ content })) },
+      DailySnippetResponseSchema,
+    );
+  }
+
+  async updateDailySnippet(snippetId: number, content: string): Promise<DailySnippetResponse> {
+    return this.request(
+      `/daily-snippets/${this.integer(snippetId, "snippetId")}`,
+      { method: "PUT", body: JSON.stringify(DailySnippetContentSchema.parse({ content })) },
+      DailySnippetResponseSchema,
+    );
+  }
+
+  async deleteDailySnippet(snippetId: number): Promise<void> {
+    await this.request(`/daily-snippets/${this.integer(snippetId, "snippetId")}`, { method: "DELETE" });
+  }
+
+  async organizeDailySnippet(content: string, stream?: boolean): Promise<DailySnippetOrganizeResponse> {
+    const query = stream === undefined ? "" : `?stream=${String(stream)}`;
+    return this.request(
+      `/daily-snippets/organize${query}`,
+      { method: "POST", body: JSON.stringify(DailySnippetContentSchema.parse({ content })) },
+      DailySnippetOrganizeResponseSchema,
+    );
+  }
+
+  async getDailySnippetFeedback(stream?: boolean): Promise<DailySnippetFeedbackResponse> {
+    const query = stream === undefined ? "" : `?stream=${String(stream)}`;
+    return this.request(`/daily-snippets/feedback${query}`, { method: "GET" }, DailySnippetFeedbackResponseSchema);
+  }
+
+  async getDailySnippetPageData(params: PageDataParams = {}): Promise<DailySnippetPageDataResponse> {
+    const query = new URLSearchParams();
+    this.setNumber(query, "id", params.id);
+    this.setString(query, "date", params.date);
+    const suffix = query.toString() ? `?${query}` : "";
+    return this.request(
+      `/daily-snippets/page-data${suffix}`,
+      { method: "GET" },
+      DailySnippetPageDataResponseSchema,
+    );
+  }
+
+  private async request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T>;
+  private async request(path: string, init: RequestInit): Promise<void>;
+  private async request<T>(path: string, init: RequestInit, schema?: z.ZodType<T>): Promise<T | void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const headers = new Headers(this.headers);
+    headers.set("accept", "application/json");
+    headers.set("x-request-id", this.requestId);
+    for (const [key, value] of new Headers(init.headers)) headers.set(key, value);
+    if (init.body !== undefined) headers.set("content-type", "application/json");
+
+    try {
+      const response = await this.fetcher(`${this.baseUrl}${path}`, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const code = response.status === 401 || response.status === 403
+          ? "AUTH_REQUIRED"
+          : response.status === 429
+            ? "RATE_LIMITED"
+            : "UPSTREAM_ERROR";
+        throw new ThousandSchoolApiError(
+          code,
+          `1000.school request failed (${response.status})`,
+          response.status,
+          code === "RATE_LIMITED" || response.status >= 500,
+        );
+      }
+
+      if (!schema) return;
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        throw new ThousandSchoolApiError("INVALID_RESPONSE", "1000.school returned invalid JSON", response.status, false, {
+          cause: error,
+        });
+      }
+
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) {
+        throw new ThousandSchoolApiError("INVALID_RESPONSE", "1000.school response did not match the API contract", response.status, false, {
+          cause: parsed.error,
+        });
+      }
+      return parsed.data;
+    } catch (error) {
+      if (error instanceof ThousandSchoolApiError) throw error;
+      throw new ThousandSchoolApiError("NETWORK_ERROR", "1000.school request failed", undefined, true, {
+        cause: error,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private integer(value: number, name: string): number {
+    if (!Number.isInteger(value) || value < 1) throw new TypeError(`${name} must be a positive integer`);
+    return value;
+  }
+
+  private setNumber(query: URLSearchParams, name: string, value: number | undefined): void {
+    if (value !== undefined) query.set(name, String(value));
+  }
+
+  private setString(query: URLSearchParams, name: string, value: string | undefined): void {
+    if (value !== undefined) query.set(name, value);
+  }
+}
