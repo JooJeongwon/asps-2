@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { retryAfterSeconds } from "../../lib/http";
 import {
   ApiTokenResponseSchema,
   AuthStatusResponseSchema,
@@ -52,6 +53,7 @@ export class ThousandSchoolApiError extends Error {
     readonly status?: number,
     readonly retryable = false,
     options?: ErrorOptions,
+    readonly retryAfter?: number,
   ) {
     super(message, options);
     this.name = "ThousandSchoolApiError";
@@ -190,6 +192,8 @@ export class ThousandSchoolClient {
           `1000.school request failed (${response.status})`,
           response.status,
           code === "RATE_LIMITED" || response.status >= 500,
+          undefined,
+          retryAfterSeconds(response.headers.get("retry-after")),
         );
       }
 

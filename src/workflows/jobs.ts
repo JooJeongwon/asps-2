@@ -58,9 +58,9 @@ function mapping(value: string): NotionPropertyMapping {
   }
 }
 
-function safeFailure(error: unknown): { code: string; message: string; retryable: boolean } {
+function safeFailure(error: unknown): { code: string; message: string; retryable: boolean; retryAfter?: number } {
   if (error instanceof NotionApiError || error instanceof ThousandSchoolApiError) {
-    return { code: error.code, message: error.message, retryable: error.retryable };
+    return { code: error.code, message: error.message, retryable: error.retryable, retryAfter: error.retryAfter };
   }
   if (error instanceof WorkflowContractError) {
     return { code: "WORKFLOW_CONTRACT_INVALID", message: error.message, retryable: false };
@@ -69,6 +69,12 @@ function safeFailure(error: unknown): { code: string; message: string; retryable
     return { code: "CREDENTIAL_INVALID", message: "Stored credential is invalid", retryable: false };
   }
   return { code: "WORKFLOW_FAILED", message: "Automation workflow failed", retryable: false };
+}
+
+function retryDelaySeconds(retryAfter: number | undefined, attempts: number): number {
+  if (retryAfter !== undefined) return Math.min(300, Math.max(1, retryAfter));
+  const backoff = Math.min(300, 5 * 2 ** Math.max(0, attempts - 1));
+  return Math.min(300, Math.max(1, Math.ceil(backoff * (0.5 + Math.random()))));
 }
 
 function output(step: JobStep | undefined): Record<string, unknown> {
@@ -144,7 +150,7 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
         // Keep the original workflow failure; the page update is best effort.
       }
     }
-    if (failure.retryable) message.retry({ delaySeconds: Math.min(300, Math.max(5, message.attempts * 15)) });
+    if (failure.retryable) message.retry({ delaySeconds: retryDelaySeconds(failure.retryAfter, message.attempts) });
     else message.ack();
   };
 

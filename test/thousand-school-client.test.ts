@@ -58,3 +58,13 @@ test("upstream auth and malformed responses are safe typed errors", async () => 
     return error instanceof ThousandSchoolApiError && error.code === "INVALID_RESPONSE";
   });
 });
+
+test("retry-after is preserved for retryable upstream failures", async () => {
+  const client = new ThousandSchoolClient({
+    baseUrl: "https://api.example.invalid",
+    fetcher: fetcher(() => new Response(null, { status: 429, headers: { "retry-after": "17" } })),
+  });
+  await assert.rejects(() => client.getAuthStatus(), (error: unknown) => {
+    return error instanceof ThousandSchoolApiError && error.retryable && error.retryAfter === 17;
+  });
+});

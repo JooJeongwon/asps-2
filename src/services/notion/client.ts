@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { retryAfterSeconds } from "../../lib/http";
 import {
   NotionBlockListSchema,
   NotionPageListSchema,
@@ -27,6 +28,7 @@ export class NotionApiError extends Error {
     readonly status?: number,
     readonly retryable = false,
     options?: ErrorOptions,
+    readonly retryAfter?: number,
   ) {
     super(message, options);
     this.name = "NotionApiError";
@@ -128,7 +130,14 @@ export class NotionClient {
           : response.status === 429
             ? "RATE_LIMITED"
             : "UPSTREAM_ERROR";
-        throw new NotionApiError(code, `Notion request failed (${response.status})`, response.status, code === "RATE_LIMITED" || response.status >= 500 || response.status === 529);
+        throw new NotionApiError(
+          code,
+          `Notion request failed (${response.status})`,
+          response.status,
+          code === "RATE_LIMITED" || response.status >= 500 || response.status === 529,
+          undefined,
+          retryAfterSeconds(response.headers.get("retry-after")),
+        );
       }
       let payload: unknown;
       try {

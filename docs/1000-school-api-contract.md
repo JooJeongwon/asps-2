@@ -48,7 +48,7 @@
 | network/timeout | `NETWORK_ERROR` | 예 |
 | JSON/schema 불일치 | `INVALID_RESPONSE` | 아니오 |
 
-기본 timeout은 10초다. API가 제공하는 `Retry-After` 해석은 아직 adapter에 없고, Queue workflow를 붙일 때 추가해야 한다.
+기본 timeout은 10초다. `Retry-After`가 초 또는 HTTP-date로 오면 adapter가 초 단위로 보존하며, Queue는 최대 300초로 제한해 사용한다. 헤더가 없으면 exponential backoff와 jitter를 사용한다.
 
 ## 자동화 단계와 승인된 MVP 매핑
 
