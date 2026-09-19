@@ -44,6 +44,11 @@ export interface NotionRuntime {
   propertyMapping: NotionPropertyMapping;
 }
 
+export interface WebhookProfile {
+  userId: string;
+  profile: AutomationProfile;
+}
+
 function mapping(value: string | undefined): Record<string, string> {
   if (!value) return {};
   try {
@@ -142,6 +147,32 @@ export class ConnectionRepository {
     const payload = await decryptCredential({ keyVersion: row.key_version, iv: row.iv, encryptedPayload: row.encrypted_payload }, masterKey);
     if (typeof payload.token !== "string" || !payload.token) throw new HttpError(500, "CREDENTIAL_INVALID", "Stored credential is invalid");
     return { dataSourceId: row.data_source_id, token: payload.token, propertyMapping: mapping(row.property_mapping_json) };
+  }
+
+  async storeNotionWebhookVerificationToken(connectionId: string, token: string, masterKey: string, keyVersion: number): Promise<boolean> {
+    const encrypted = await encryptCredential({ token }, masterKey, keyVersion);
+    const result = await this.db
+      .prepare(
+        `UPDATE notion_connections
+         SET webhook_key_version = ?, webhook_iv = ?, webhook_encrypted_token = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(encrypted.keyVersion, encrypted.iv, encrypted.encryptedPayload, new Date().toISOString(), connectionId)
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  async getNotionWebhookVerificationToken(connectionId: string, masterKey: string): Promise<string | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT webhook_key_version, webhook_iv, webhook_encrypted_token
+         FROM notion_connections WHERE id = ?`,
+      )
+      .bind(connectionId)
+      .first<{ webhook_key_version: number | null; webhook_iv: string | null; webhook_encrypted_token: string | null }>();
+    if (!row?.webhook_key_version || !row.webhook_iv || !row.webhook_encrypted_token) return null;
+    const payload = await decryptCredential({ keyVersion: row.webhook_key_version, iv: row.webhook_iv, encryptedPayload: row.webhook_encrypted_token }, masterKey);
+    return typeof payload.token === "string" && payload.token ? payload.token : null;
   }
 
   async markNotionAuthRequired(userId: string, profileId: string): Promise<void> {
@@ -364,6 +395,24 @@ export class ConnectionRepository {
     return results.map((row) => profile(row as Parameters<typeof profile>[0]));
   }
 
+  async listWebhookProfiles(connectionId: string): Promise<WebhookProfile[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT p.user_id, p.id, p.name, p.notion_connection_id, p.thousand_school_account_id,
+                p.default_mode, p.schedule_json, p.enabled, p.created_at, p.updated_at
+         FROM automation_profiles p
+         JOIN notion_connections n ON n.id = p.notion_connection_id AND n.user_id = p.user_id
+         WHERE n.id = ? AND n.status = 'ACTIVE' AND p.enabled = 1
+         ORDER BY p.created_at DESC`,
+      )
+      .bind(connectionId)
+      .all();
+    return results.map((row) => {
+      const value = row as Parameters<typeof profile>[0] & { user_id: string };
+      return { userId: value.user_id, profile: profile(value) };
+    });
+  }
+
   async getProfile(userId: string, profileId: string): Promise<AutomationProfile | null> {
     const row = await this.db
       .prepare(
@@ -441,6 +490,20 @@ export class ConnectionRepository {
       ).bind(now, userId, profileId),
     ]);
     return result[0]?.meta.changes === 1;
+  }
+
+  async deleteProfile(userId: string, profileId: string): Promise<boolean> {
+    const result = await this.db.batch([
+      this.db.prepare(
+        `DELETE FROM job_steps
+         WHERE user_id = ? AND job_id IN (
+           SELECT id FROM jobs WHERE user_id = ? AND profile_id = ?
+         )`,
+      ).bind(userId, userId, profileId),
+      this.db.prepare("DELETE FROM jobs WHERE user_id = ? AND profile_id = ?").bind(userId, profileId),
+      this.db.prepare("DELETE FROM automation_profiles WHERE user_id = ? AND id = ?").bind(userId, profileId),
+    ]);
+    return result[2]?.meta.changes === 1;
   }
 
   private async assertActiveLinks(userId: string, notionConnectionId: string, thousandSchoolAccountId: string): Promise<void> {

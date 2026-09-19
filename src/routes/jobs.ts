@@ -60,6 +60,11 @@ export async function handleJobs(request: Request, env: Env, user: User): Promis
       const job = await repository.getDetails(user.id, jobId);
       return job ? json(job) : json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
     }
+    if (request.method === "DELETE") {
+      const deleted = await repository.delete(user.id, jobId);
+      if (deleted) await new AuditRepository(env.DB).record({ userId: user.id, action: "JOB_DELETED", targetType: "job", targetId: jobId });
+      return deleted ? empty() : json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
+    }
     throw new HttpError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
   }
 

@@ -33,7 +33,7 @@ flowchart TD
 
 로그인 세션은 대시보드용이고 자동화 실행의 인증 수단이 아니다. Queue consumer는 queue payload의 불투명 ID로 사용자별 profile과 암호화 credential을 다시 조회하므로 예약·재시도 실행이 브라우저 로그인에 의존하지 않는다.
 
-현재 구현된 사용자 API는 `/api/me`, `/api/me/connections/notion`, `/api/me/connections/thousand-school`, `/api/me/automation-profiles`와 profile 단건 API, `/api/jobs`와 job 단건/재시도/취소/action API, `POST /api/sync/notion`이다. Notion 버튼용 `POST /api/webhooks/notion/:connectionId`도 제공하며 custom header와 connection-scoped job 검증을 거친다. Notion sync는 `전송대기` page를 서버에서 변환·해시해 멱등 job을 Queue에 넣는다.
+현재 구현된 사용자 API는 `/api/me`, `/api/me/connections/notion`, `/api/me/connections/thousand-school`, `/api/me/automation-profiles`와 profile 단건 API, `/api/jobs`와 job 단건/삭제/재시도/취소/action API, `POST /api/sync/notion`이다. `POST /api/webhooks/notion/:connectionId`는 기존 Notion webhook action과 공식 connection webhook을 함께 처리하며, 공식 webhook은 서명을 검증한 뒤 `작성완료` page를 Queue에 넣는다.
 
 현재 연결 API는 provider별 활성 연결 하나를 관리한다. 다중 Notion/1000.school 계정 선택이 실제 요구사항이 되면 목록/선택 API로 확장한다.
 
@@ -111,4 +111,4 @@ OpenAPI에는 `securitySchemes`가 선언되어 있지 않으므로 client는 �
 5. 공식 계약 기반 1000.school adapter
 6. 사용자 UI와 두 사용자 교차 접근 E2E
 
-현재 저장소는 Worker API, Notion sync/Queue 기반 `FETCHED` 단계까지 포함한다. 실제 1000.school 저장 기능은 공식 계약과 출시 차단 조건이 통과된 뒤 별도로 활성화한다.
+현재 저장소는 Worker API, Notion sync/connection webhook, Queue 기반 작성 → AI 제안 → AI 채점 → 저장 workflow를 포함한다. 1000.school 호출은 저장소의 공식 계약 adapter를 사용한다.

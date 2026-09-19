@@ -25,7 +25,7 @@ const ProfileCreateInput = z.object({
   name: z.string().min(1).max(120),
   notionConnectionId: z.string().min(1),
   thousandSchoolAccountId: z.string().min(1),
-  defaultMode: Mode.default("DRAFT_ONLY"),
+  defaultMode: Mode.default("FULL_AUTO"),
   schedule: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 const ProfileUpdateInput = ProfileCreateInput.partial().extend({ enabled: z.boolean().optional() });
@@ -102,11 +102,17 @@ export async function handleMe(request: Request, env: Env, user: User): Promise<
         return profile ? json(profile) : json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
       }
       if (request.method === "DELETE") {
+        const deleted = await connections.deleteProfile(user.id, profileId);
+        if (deleted) await audit.record({ userId: user.id, action: "PROFILE_DELETED", targetType: "automation_profile", targetId: profileId });
+        return deleted ? empty() : json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
+      }
+      const input = await body(request, ProfileUpdateInput);
+      if (input.enabled === false && Object.keys(input).length === 1) {
         const disabled = await connections.disableProfile(user.id, profileId);
         if (disabled) await audit.record({ userId: user.id, action: "PROFILE_DISABLED", targetType: "automation_profile", targetId: profileId });
         return disabled ? empty() : json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
       }
-      const result = await connections.updateProfile(user.id, profileId, await body(request, ProfileUpdateInput));
+      const result = await connections.updateProfile(user.id, profileId, input);
       await audit.record({ userId: user.id, action: "PROFILE_UPDATED", targetType: "automation_profile", targetId: profileId });
       return json(result);
     }

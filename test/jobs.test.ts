@@ -48,3 +48,24 @@ test("retryable failure stores the next retry time", async () => {
   const nextRetryAt = Date.parse(String(jobArgs[1]));
   assert.ok(nextRetryAt >= before && nextRetryAt <= Date.now() + 18_000);
 });
+
+test("deleting a job removes steps before the scoped job row", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...args: unknown[]) {
+          statements.push({ sql, args });
+          return {};
+        },
+      };
+    },
+    batch: async () => statements.map((_, index) => ({ meta: { changes: index === 1 ? 1 : 2 } })),
+  } as unknown as D1Database;
+
+  assert.equal(await new JobRepository(db).delete("user-1", "job-1"), true);
+  assert.match(statements[0].sql, /DELETE FROM job_steps/);
+  assert.deepEqual(statements[0].args, ["user-1", "job-1"]);
+  assert.match(statements[1].sql, /user_id = \? AND id = \?/);
+  assert.deepEqual(statements[1].args, ["user-1", "job-1"]);
+});

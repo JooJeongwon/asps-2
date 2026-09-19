@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { decryptCredential } from "../security/credentials";
 import { ConnectionRepository } from "../repositories/connections";
-import { JobRepository, type JobStep, type JobStepStage, type JobTargetStage, targetStageForMode } from "../repositories/jobs";
+import { JobRepository, type JobMode, type JobStep, type JobStepStage, type JobTargetStage, targetStageForMode } from "../repositories/jobs";
 import { NotionApiError, NotionClient } from "../services/notion/client";
 import {
   hydrateBlockTree,
+  isNotionReadyStatus,
   notionResultProperties,
   toNotionDraft,
   type NotionPropertyMapping,
@@ -19,12 +20,19 @@ import {
 } from "./thousand-school";
 import type { Env } from "../types/env";
 
-const JobMessage = z.object({
+const JobWorkflowMessage = z.object({
   userId: z.string().min(1),
   jobId: z.string().min(1),
   profileId: z.string().min(1),
   targetStage: z.enum(["DRAFT_CREATED", "AI_SUGGESTED", "AI_SCORED", "SAVED"]).optional(),
 });
+const NotionPageMessage = z.object({
+  type: z.literal("NOTION_PAGE_UPDATED"),
+  userId: z.string().min(1),
+  profileId: z.string().min(1),
+  pageId: z.string().min(1),
+});
+const JobMessage = z.union([JobWorkflowMessage, NotionPageMessage]);
 export type JobQueueMessage = z.infer<typeof JobMessage>;
 
 const stageRank: Record<JobTargetStage, number> = {
@@ -92,6 +100,53 @@ function stringOutput(step: JobStep | undefined, key: string): string | undefine
   return typeof value === "string" ? value : undefined;
 }
 
+async function processNotionPage(message: Message<unknown>, env: Env, input: z.infer<typeof NotionPageMessage>): Promise<void> {
+  const connections = new ConnectionRepository(env.DB);
+  const profile = await connections.getProfile(input.userId, input.profileId);
+  if (!profile?.enabled) {
+    message.ack();
+    return;
+  }
+
+  let runtime;
+  try {
+    runtime = await connections.getNotionRuntime(input.userId, input.profileId, env.CREDENTIAL_ENCRYPTION_KEY);
+    const client = new NotionClient({ token: runtime.token, requestId: message.id });
+    const page = await client.retrievePage(input.pageId);
+    const blocks = await hydrateBlockTree(client, await client.listAllBlockChildren(input.pageId));
+    const draft = await toNotionDraft(page, blocks, runtime.propertyMapping);
+    if (!isNotionReadyStatus(draft.status) || !draft.targetDate || draft.warnings.some((warning) => ["missing_date_property", "empty_content", "unsupported_block"].includes(warning))) {
+      message.ack();
+      return;
+    }
+
+    const jobs = new JobRepository(env.DB);
+    const created = await jobs.create({
+      userId: input.userId,
+      profileId: input.profileId,
+      notionPageId: input.pageId,
+      targetDate: draft.targetDate,
+      contentHash: draft.contentHash,
+      mode: profile.defaultMode as JobMode,
+    });
+    const jobProperties = notionResultProperties(page, runtime.propertyMapping, { jobId: created.job.id });
+    if (Object.keys(jobProperties).length) await client.updatePage(input.pageId, jobProperties);
+    if (created.created || ["PENDING", "FAILED_RETRYABLE"].includes(created.job.status)) {
+      await env.JOB_QUEUE.send({ userId: input.userId, jobId: created.job.id, profileId: input.profileId, targetStage: targetStageForMode(created.job.mode) });
+    }
+    message.ack();
+  } catch (error) {
+    if (error instanceof NotionApiError) {
+      if (error.code === "AUTH_REQUIRED") await connections.markNotionAuthRequired(input.userId, input.profileId);
+      if (error.retryable) {
+        message.retry({ delaySeconds: retryDelaySeconds(error.retryAfter, message.attempts) });
+        return;
+      }
+    }
+    message.ack();
+  }
+}
+
 async function updatePage(
   client: NotionClient,
   page: Parameters<typeof notionResultProperties>[0],
@@ -106,6 +161,11 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   const parsed = JobMessage.safeParse(message.body);
   if (!parsed.success) {
     message.ack();
+    return;
+  }
+
+  if ("pageId" in parsed.data) {
+    await processNotionPage(message, env, parsed.data);
     return;
   }
 

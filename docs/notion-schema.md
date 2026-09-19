@@ -32,22 +32,34 @@
 | --- | --- | --- | --- |
 | `title` | `title` | 초안 식별용 제목 | mapping 보관 |
 | `date` | `date` | job `targetDate` | 읽기 |
-| `status` | `select` 또는 `status` | 전송 대상 판별 | 읽기 |
+| `status` | `select` 또는 `status` | `작성완료` 전환 감지 | 읽기/쓰기 |
 | `jobId` | `rich_text` | ASPS job ID | sync 시 기록 |
 | `remoteId` | `rich_text` | 1000.school ID | 작성 단계에서 기록 |
 | `suggestion` | `rich_text` | `organize` 결과 | AI 제안 단계에서 기록 |
 | `score` | `rich_text` 또는 숫자로 변환 가능한 `number` | `feedback` 결과 | AI 채점 단계에서 기록 |
 | `lastError` | `rich_text` | 안전한 오류 코드 | 실패 시 기록 |
 
-현재 sync 대상 status 값은 정확히 `전송대기`다. 해당 page의 child block을 순서대로 읽어 plain text와 SHA-256 content hash를 만든다. 지원하지 않는 block은 `[Unsupported block: ...]` placeholder와 warning으로 남긴다.
+현재 자동 실행 대상 status 값은 `작성완료`다. 기존 사용자를 위해 `전송대기`도 계속 허용한다. 해당 page의 child block을 순서대로 읽어 plain text와 SHA-256 content hash를 만든다. 지원하지 않는 block은 `[Unsupported block: ...]` placeholder와 warning으로 남긴다.
 
 ## 처리 흐름
 
 1. 활성 profile의 data source를 pagination으로 조회한다.
 2. 각 page의 child block을 pagination하고 tree를 hydrate한다.
 3. `date`, `status`, content를 변환한다.
-4. status가 `전송대기`이고 date/content가 유효하면 job을 만든다.
+4. status가 `작성완료` 또는 `전송대기`이고 date/content가 유효하면 `FULL_AUTO` job을 만든다.
 5. `userId + profileId + notionPageId + targetDate + contentHash + mode`로 중복을 막는다.
+
+## 작성완료 자동 실행
+
+Notion connection 설정의 Webhooks 탭에서 다음 URL로 subscription을 만들고 `page.properties_updated`, `page.content_updated` 이벤트를 선택한다.
+
+```text
+https://<worker-domain>/api/webhooks/notion/<notion-connection-id>
+```
+
+Notion이 보내는 최초 `verification_token`은 Worker가 암호화해 해당 connection에 저장한다. 이후 이벤트가 오면 Worker가 최신 page와 block을 다시 조회하고, status가 `작성완료`일 때만 사용자별 Queue에 등록한다. Queue consumer는 같은 사용자의 1000.school credential로 작성 → AI 제안 → AI 채점 → 저장을 순서대로 실행한다.
+
+Notion webhook은 변경된 본문을 직접 보내지 않고 page ID만 보내므로, event subscription을 검증한 뒤 최신 page를 조회한다. Notion의 event 전달은 보통 1분 이내지만 최대 5분이 걸릴 수 있다.
 
 ## 웹훅 버튼
 

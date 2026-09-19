@@ -57,3 +57,22 @@ test("job lookup does not return another user's record", async () => {
 
   assert.equal(await new JobRepository(db).get("user-a", "job-b"), null);
 });
+
+test("profile deletion keeps every delete scoped to the current user", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...args: unknown[]) {
+          statements.push({ sql, args });
+          return {};
+        },
+      };
+    },
+    batch: async () => statements.map(() => ({ meta: { changes: 1 } })),
+  } as unknown as D1Database;
+
+  assert.equal(await new ConnectionRepository(db).deleteProfile("user-a", "profile-a"), true);
+  assert.equal(statements.length, 3);
+  for (const statement of statements) assert.match(statement.sql, /user_id = \?/);
+});

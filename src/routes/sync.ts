@@ -4,7 +4,7 @@ import { json } from "../lib/http";
 import { ConnectionRepository } from "../repositories/connections";
 import { JobRepository, targetStageForMode, type JobMode } from "../repositories/jobs";
 import { NotionApiError, NotionClient } from "../services/notion/client";
-import { hydrateBlockTree, notionResultProperties, toNotionDraft } from "../services/notion/blocks";
+import { hydrateBlockTree, isNotionReadyStatus, notionResultProperties, toNotionDraft } from "../services/notion/blocks";
 import type { User } from "../types/domain";
 import type { Env } from "../types/env";
 
@@ -46,9 +46,9 @@ export async function handleNotionSync(request: Request, env: Env, user: User, r
       result.scanned += 1;
       const blocks = await hydrateBlockTree(client, await client.listAllBlockChildren(page.id));
       const draft = await toNotionDraft(page, blocks, runtime.propertyMapping);
-      if (draft.status !== "전송대기" || draft.warnings.includes("missing_date_property") || draft.warnings.includes("empty_content") || draft.warnings.includes("unsupported_block")) {
+      if (!isNotionReadyStatus(draft.status) || draft.warnings.includes("missing_date_property") || draft.warnings.includes("empty_content") || draft.warnings.includes("unsupported_block")) {
         result.skipped += 1;
-        const warnings = draft.status === "전송대기" ? draft.warnings : ["status_not_ready", ...draft.warnings];
+        const warnings = isNotionReadyStatus(draft.status) ? draft.warnings : ["status_not_ready", ...draft.warnings];
         for (const code of warnings) result.warnings.push({ pageId: page.id, code });
         continue;
       }

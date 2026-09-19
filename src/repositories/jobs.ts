@@ -255,6 +255,14 @@ export class JobRepository {
     return result.meta.changes === 1;
   }
 
+  async delete(userId: string, jobId: string): Promise<boolean> {
+    const result = await this.db.batch([
+      this.db.prepare("DELETE FROM job_steps WHERE user_id = ? AND job_id = ?").bind(userId, jobId),
+      this.db.prepare("DELETE FROM jobs WHERE user_id = ? AND id = ?").bind(userId, jobId),
+    ]);
+    return result[1]?.meta.changes === 1;
+  }
+
   async retry(userId: string, jobId: string): Promise<Job> {
     const current = await this.get(userId, jobId);
     if (!current) throw new HttpError(404, "NOT_FOUND", "Not found");

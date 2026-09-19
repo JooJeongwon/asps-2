@@ -66,7 +66,7 @@ CREATE TABLE automation_profiles (
   name TEXT NOT NULL,
   notion_connection_id TEXT NOT NULL,
   thousand_school_account_id TEXT NOT NULL,
-  default_mode TEXT NOT NULL DEFAULT 'DRAFT_ONLY'
+  default_mode TEXT NOT NULL DEFAULT 'FULL_AUTO'
     CHECK (default_mode IN ('DRAFT_ONLY', 'SUGGEST', 'SCORE', 'SAVE', 'FULL_AUTO')),
   schedule_json TEXT,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
