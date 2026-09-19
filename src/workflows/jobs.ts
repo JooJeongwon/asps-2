@@ -127,7 +127,7 @@ async function processNotionPage(message: Message<unknown>, env: Env, input: z.i
       notionPageId: input.pageId,
       targetDate: draft.targetDate,
       contentHash: draft.contentHash,
-      mode: profile.defaultMode as JobMode,
+      mode: "FULL_AUTO",
     });
     const jobProperties = notionResultProperties(page, runtime.propertyMapping, { jobId: created.job.id });
     if (Object.keys(jobProperties).length) await client.updatePage(input.pageId, jobProperties);

@@ -64,7 +64,7 @@ const APP_HTML = `<!doctype html>
         <label>Workspace 참조<input name="workspaceRef"></label>
         <label>제목 property<input name="title" value="제목"></label>
         <label>날짜 property<input name="date" value="날짜" required></label>
-        <label>상태 property<input name="status" value="상태" required></label>
+        <label>상태 property<input name="status" value="상태" required><span class="muted">Notion 옵션: 작성중 → 작성완료 → 처리중 → 완료 / 오류</span></label>
         <label>ASPS job ID property<input name="jobId" value="ASPS Job ID"></label>
         <label>1000.school ID property<input name="remoteId" value="1000school ID"></label>
         <label>AI 제안 property<input name="suggestion" value="AI 제안"></label>
@@ -97,7 +97,7 @@ const APP_HTML = `<!doctype html>
   </section>
 
   <section>
-    <div class="row" style="justify-content:space-between"><h2>Jobs</h2><span class="muted">Notion의 전송대기 page를 동기화하면 생성됩니다.</span></div>
+    <div class="row" style="justify-content:space-between"><h2>Jobs</h2><span class="muted">Notion의 작성완료 page를 동기화하거나 Webhook으로 자동 실행합니다.</span></div>
     <div id="jobs" class="muted">불러오는 중…</div>
     <div id="job-detail" style="margin-top:12px"></div>
   </section>

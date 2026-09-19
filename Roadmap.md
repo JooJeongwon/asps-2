@@ -165,7 +165,7 @@ flowchart TD
 - pagination, rate limit, timeout을 처리한다.
 - block 순서를 보존해 daily snippet input으로 변환한다.
 - 사용자별 `property_mapping_json`을 지원한다.
-- `초안`, `전송대기`, `처리중`, `완료`, `오류` 상태 전이를 구현한다.
+- `작성중`, `작성완료`, `처리중`, `완료`, `오류` 상태 전이를 구현한다.
 - webhook 서명 검증 또는 사용자별 Cron polling을 구현한다.
 - webhook connection ID로 소유 `userId`를 결정하고 payload의 임의 user 지정은 거부한다.
 - 변환 결과의 content hash를 생성한다.
@@ -178,7 +178,7 @@ flowchart TD
 
 완료 조건:
 
-- `전송대기` page가 해당 Notion connection 소유자의 job으로 생성된다.
+- `작성완료` page가 해당 Notion connection 소유자의 job으로 생성된다.
 - 사용자 A의 webhook이 사용자 B의 profile이나 job을 실행하지 않는다.
 - 같은 webhook을 반복 수신해도 job이 중복 생성되지 않는다.
 - 지원하지 않는 block이 조용히 누락되지 않는다.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blocksToPlainText, notionResultProperties, toNotionDraft } from "../src/services/notion/blocks.ts";
+import { blocksToPlainText, isNotionReadyStatus, notionResultProperties, toNotionDraft } from "../src/services/notion/blocks.ts";
 
 const block = (type: string, value: Record<string, unknown>) => ({ id: crypto.randomUUID(), type, [type]: value });
 
@@ -49,4 +49,10 @@ test("Notion date-time values become daily dates", async () => {
   );
   assert.equal(draft.targetDate, "2026-09-19");
   assert.equal(draft.warnings.includes("invalid_date_property"), false);
+});
+
+test("only 작성완료 starts automation", () => {
+  assert.equal(isNotionReadyStatus("작성중"), false);
+  assert.equal(isNotionReadyStatus("전송대기"), false);
+  assert.equal(isNotionReadyStatus("작성완료"), true);
 });

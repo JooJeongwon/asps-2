@@ -23,7 +23,7 @@ export interface NotionDraft {
 }
 
 export function isNotionReadyStatus(status: string | null): boolean {
-  return status === "작성완료" || status === "전송대기";
+  return status === "작성완료";
 }
 
 export async function hydrateBlockTree(client: NotionClient, blocks: NotionBlock[], depth = 0): Promise<NotionBlock[]> {

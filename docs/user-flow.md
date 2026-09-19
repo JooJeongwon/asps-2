@@ -12,7 +12,7 @@
 4. 사용자가 본인의 1000.school credential을 등록한다.
 5. 같은 사용자의 두 연결을 automation profile로 묶는다.
 6. profile의 기본 mode는 `FULL_AUTO`다.
-7. Notion page의 status를 `작성완료`로 바꾸면 connection webhook이 변경을 감지한다.
+7. Notion page의 status를 `작성중`으로 둔 채 작성하고, 완료 시 `작성완료`로 바꾸면 connection webhook이 변경을 감지한다.
 8. Worker가 content hash 기반 job을 만들고 Queue에는 `userId`, `profileId`, `jobId`만 보낸다.
 9. Queue consumer가 처리 직전에 user/profile/connection/credential 상태를 다시 확인한다.
 10. Notion page와 block을 조회·검증한다.

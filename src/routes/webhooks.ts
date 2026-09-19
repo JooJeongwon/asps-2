@@ -52,7 +52,6 @@ export async function handleNotionWebhook(request: Request, env: Env, connection
   const verification = NotionVerificationInput.safeParse(raw);
   const connections = new ConnectionRepository(env.DB);
   if (verification.success) {
-    console.log("NOTION_VERIFICATION_TOKEN:", verification.data.verification_token);
     if (!await verifyNotionWebhookSignature(body, request.headers.get("x-notion-signature"), verification.data.verification_token)) {
       throw new HttpError(401, "WEBHOOK_UNAUTHORIZED", "Webhook authentication failed");
     }

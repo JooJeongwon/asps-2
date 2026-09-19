@@ -198,7 +198,7 @@ flowchart TD
 - 권장 property:
   - `제목`: title
   - `날짜`: date
-  - `상태`: select (`초안`, `전송대기`, `처리중`, `완료`, `오류`)
+  - `상태`: select (`작성중`, `작성완료`, `처리중`, `완료`, `오류`)
   - `1000school ID`: rich text
   - `AI 제안`: rich text 또는 page content
   - `AI 점수`: number
@@ -370,7 +370,7 @@ pnpm deploy
 - 두 명 이상의 사용자가 각자 다른 Notion token과 1000.school token을 연결할 수 있다.
 - 각 사용자는 본인의 connection, profile, job, result만 조회·변경할 수 있다.
 - 한 사용자의 job에 다른 사용자의 credential이 사용되지 않는다.
-- Notion의 `전송대기` 초안을 같은 사용자의 1000.school 계정으로 전송한다.
+- Notion의 `작성완료` 초안을 같은 사용자의 1000.school 계정으로 전송한다.
 - 하나의 job이 작성 → AI 제안 → AI 채점 → 저장 단계를 추적한다.
 - 중복 실행으로 같은 글이나 AI 요청이 중복 생성되지 않는다.
 - 실패 단계부터 안전하게 재개할 수 있다.
