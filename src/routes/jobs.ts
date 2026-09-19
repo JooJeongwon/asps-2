@@ -55,7 +55,7 @@ export async function handleJobs(request: Request, env: Env, user: User): Promis
   if (path[0] === "api" && path[1] === "jobs" && path.length === 3) {
     const jobId = decodeURIComponent(path[2]);
     if (request.method === "GET") {
-      const job = await repository.get(user.id, jobId);
+      const job = await repository.getDetails(user.id, jobId);
       return job ? json(job) : json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
     }
     throw new HttpError(405, "METHOD_NOT_ALLOWED", "Method not allowed");

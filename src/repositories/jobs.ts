@@ -2,6 +2,8 @@ import { HttpError } from "../lib/errors";
 
 export type JobMode = "DRAFT_ONLY" | "SUGGEST" | "SCORE" | "SAVE" | "FULL_AUTO";
 export type JobStatus = "PENDING" | "FETCHED" | "DRAFT_CREATED" | "AI_SUGGESTED" | "AI_SCORED" | "SAVED" | "FAILED_RETRYABLE" | "FAILED_FINAL" | "AUTH_REQUIRED" | "PROFILE_REQUIRED" | "CANCELLED";
+export type JobStepStage = "FETCH" | "CREATE_DRAFT" | "AI_SUGGEST" | "AI_SCORE" | "SAVE" | "NOTION_UPDATE";
+export type JobStepStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
 
 export interface Job {
   id: string;
@@ -19,6 +21,19 @@ export interface Job {
   lastErrorMessage: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface JobStep {
+  stage: JobStepStage;
+  status: JobStepStatus;
+  attemptCount: number;
+  safeErrorCode: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface JobDetails extends Job {
+  steps: JobStep[];
 }
 
 export interface JobExecutionContext {
@@ -74,6 +89,24 @@ function job(row: JobRow): Job {
   };
 }
 
+function step(row: {
+  stage: JobStepStage;
+  status: JobStepStatus;
+  attempt_count: number;
+  safe_error_code: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}): JobStep {
+  return {
+    stage: row.stage,
+    status: row.status,
+    attemptCount: row.attempt_count,
+    safeErrorCode: row.safe_error_code,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+  };
+}
+
 export class JobRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -102,6 +135,23 @@ export class JobRepository {
       .bind(userId, jobId)
       .first<JobRow>();
     return row ? job(row) : null;
+  }
+
+  async getDetails(userId: string, jobId: string): Promise<JobDetails | null> {
+    const current = await this.get(userId, jobId);
+    if (!current) return null;
+    const { results } = await this.db
+      .prepare(
+        `SELECT stage, status, attempt_count, safe_error_code, started_at, finished_at
+         FROM job_steps WHERE user_id = ? AND job_id = ?
+         ORDER BY CASE stage
+           WHEN 'FETCH' THEN 1 WHEN 'CREATE_DRAFT' THEN 2 WHEN 'AI_SUGGEST' THEN 3
+           WHEN 'AI_SCORE' THEN 4 WHEN 'SAVE' THEN 5 WHEN 'NOTION_UPDATE' THEN 6
+         END`,
+      )
+      .bind(userId, jobId)
+      .all<Parameters<typeof step>[0]>();
+    return { ...current, steps: results.map(step) };
   }
 
   async create(input: {

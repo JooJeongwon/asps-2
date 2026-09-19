@@ -4,6 +4,7 @@ import { health } from "./routes/health";
 import { handleMe } from "./routes/me";
 import { handleJobs } from "./routes/jobs";
 import { handleNotionSync } from "./routes/sync";
+import { handleApp } from "./routes/app";
 import { consumeJobs } from "./workflows/jobs";
 import type { Env } from "./types/env";
 import { json, requestId, withRequestId } from "./lib/http";
@@ -16,6 +17,11 @@ export default {
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
         return withRequestId(health(request), id);
+      }
+
+      if (url.pathname === "/") {
+        await authenticate(request, env);
+        return withRequestId(handleApp(request), id);
       }
 
       if (url.pathname.startsWith("/api/me")) {
