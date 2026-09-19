@@ -51,6 +51,16 @@ test("Notion date-time values become daily dates", async () => {
   assert.equal(draft.warnings.includes("invalid_date_property"), false);
 });
 
+test("empty text blocks are not unsupported content", async () => {
+  const draft = await toNotionDraft(
+    { id: "page-3", properties: {} },
+    [block("paragraph", { rich_text: [] }), block("paragraph", { rich_text: [{ plain_text: "content" }] })],
+    {},
+  );
+  assert.equal(draft.content, "content");
+  assert.equal(draft.warnings.includes("unsupported_block"), false);
+});
+
 test("only 작성완료 starts automation", () => {
   assert.equal(isNotionReadyStatus("작성중"), false);
   assert.equal(isNotionReadyStatus("전송대기"), false);

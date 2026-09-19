@@ -58,7 +58,8 @@ function blockText(block: NotionBlock): string {
     return `\`\`\`${language}\n${richText(data.rich_text)}\n\`\`\``;
   }
   const text = richText(data.rich_text);
-  if (text) {
+  if (Array.isArray(data.rich_text)) {
+    if (!text) return "";
     if (block.type === "bulleted_list_item") return `- ${text}`;
     if (block.type === "numbered_list_item") return `1. ${text}`;
     if (block.type === "quote") return `> ${text}`;
