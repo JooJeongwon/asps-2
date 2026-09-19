@@ -59,6 +59,8 @@ https://<worker-domain>/api/webhooks/notion/<notion-connection-id>
 
 Notion이 보내는 최초 `verification_token`은 Worker가 암호화해 해당 connection에 저장한다. 이후 이벤트가 오면 Worker가 최신 page와 block을 다시 조회하고, 현재 status가 `작성완료`인 page만 자동 실행 대상으로 처리한다. 작성 중에는 `작성중`을 유지하고 마지막에 `작성완료`로 바꾸므로, 이 전환이 자동 실행의 트리거가 된다. Queue consumer는 같은 사용자의 1000.school credential로 작성 → AI 제안 → AI 채점 → 저장을 순서대로 실행한다.
 
+Notion Webhooks의 Verify 입력값이 필요하면 로그인한 상태에서 `GET /api/me/connections/notion/webhook-verification-token`을 호출한다. 이 API는 현재 로그인 사용자의 연결에 저장된 검증 토큰만 반환하고, 조회 사실만 audit log에 남긴다. 토큰은 URL query, 로그, HTML에 넣지 않는다.
+
 Notion에서 status property에 위 다섯 가지 옵션을 만든 뒤, 작성 중에는 `작성중`을 유지하고 제출할 때 `작성완료`로 변경한다. Worker는 로그인 세션 없이 Webhook과 Queue로 나머지 단계를 처리한다.
 
 Notion webhook은 변경된 본문을 직접 보내지 않고 page ID만 보내므로, event subscription을 검증한 뒤 최신 page를 조회한다. Notion의 event 전달은 보통 1분 이내지만 최대 5분이 걸릴 수 있다.

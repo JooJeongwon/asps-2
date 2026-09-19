@@ -175,6 +175,21 @@ export class ConnectionRepository {
     return typeof payload.token === "string" && payload.token ? payload.token : null;
   }
 
+  async getNotionWebhookVerificationTokenForUser(userId: string, masterKey: string): Promise<string | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT webhook_key_version, webhook_iv, webhook_encrypted_token
+         FROM notion_connections
+         WHERE user_id = ? AND status != 'DISABLED'
+         LIMIT 1`,
+      )
+      .bind(userId)
+      .first<{ webhook_key_version: number | null; webhook_iv: string | null; webhook_encrypted_token: string | null }>();
+    if (!row?.webhook_key_version || !row.webhook_iv || !row.webhook_encrypted_token) return null;
+    const payload = await decryptCredential({ keyVersion: row.webhook_key_version, iv: row.webhook_iv, encryptedPayload: row.webhook_encrypted_token }, masterKey);
+    return typeof payload.token === "string" && payload.token ? payload.token : null;
+  }
+
   async markNotionAuthRequired(userId: string, profileId: string): Promise<void> {
     const now = new Date().toISOString();
     await this.db.batch([

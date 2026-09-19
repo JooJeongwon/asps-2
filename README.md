@@ -12,6 +12,7 @@
 - 1000.school client: [`src/services/thousand-school/client.ts`](src/services/thousand-school/client.ts)
 - 1000.school 단계 매핑: `organize` → AI 제안, `feedback` → 텍스트 AI 채점, `POST/PUT daily-snippets` → 작성/저장
 - 사용자 연결/profile API: `/api/me/*`
+- Notion Webhook 검증 토큰 조회: `GET /api/me/connections/notion/webhook-verification-token` (로그인한 본인만)
 - job API: `/api/jobs`, `/api/jobs/:id`, `/api/jobs/:id/action`, `/api/jobs/:id/retry`, `/api/jobs/:id/cancel`
 - Notion sync API: `POST /api/sync/notion`
 - Notion `작성완료` webhook이 최신 page를 확인해 `FULL_AUTO` 멱등 job을 Queue에 등록한다. `작성중`은 작성 중인 상태로만 사용한다.

@@ -31,6 +31,16 @@ test("profile lookup does not return another user's record", async () => {
   assert.equal(await new ConnectionRepository(db).getProfile("user-a", "profile-b"), null);
 });
 
+test("webhook verification token lookup is scoped to the current user", async () => {
+  const db = database((sql, args) => {
+    assert.match(sql, /WHERE user_id = \? AND status != 'DISABLED'/);
+    assert.deepEqual(args, ["user-a"]);
+    return null;
+  });
+
+  assert.equal(await new ConnectionRepository(db).getNotionWebhookVerificationTokenForUser("user-a", "master-key"), null);
+});
+
 test("profile creation rejects connections owned by another user", async () => {
   const db = database((sql) => {
     if (sql.includes("FROM notion_connections") && sql.includes("user_id = ?")) {

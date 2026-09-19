@@ -56,6 +56,14 @@ export async function handleMe(request: Request, env: Env, user: User): Promise<
     return json({ user: { id: user.id, email: user.email, displayName: user.displayName, status: user.status }, notion: await connections.getNotion(user.id), thousandSchool: await connections.getThousandSchool(user.id), profiles: await connections.listProfiles(user.id) });
   }
 
+  if (path.length === 5 && path[0] === "api" && path[1] === "me" && path[2] === "connections" && path[3] === "notion" && path[4] === "webhook-verification-token") {
+    method(request, ["GET"]);
+    const token = await connections.getNotionWebhookVerificationTokenForUser(user.id, env.CREDENTIAL_ENCRYPTION_KEY);
+    if (!token) return json({ error: { code: "NOT_FOUND", message: "Webhook verification token not found" } }, { status: 404 });
+    await audit.record({ userId: user.id, action: "NOTION_WEBHOOK_VERIFICATION_TOKEN_VIEWED", targetType: "notion_connection" });
+    return json({ verificationToken: token });
+  }
+
   if (path[0] === "api" && path[1] === "me" && path[2] === "connections" && path.length === 4) {
     const kind = path[3];
     if (kind === "notion") {
