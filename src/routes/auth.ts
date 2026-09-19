@@ -37,7 +37,7 @@ async function oauthJson(url: string, init: RequestInit): Promise<unknown> {
 }
 
 function oauthConfig(env: Env): void {
-  if (!env.OAUTH_TOKEN_URL || !env.OAUTH_USERINFO_URL || !env.OAUTH_CLIENT_ID || !env.OAUTH_CLIENT_SECRET || !env.OAUTH_REDIRECT_URI || !env.OAUTH_ISSUER) {
+  if (!env.OAUTH_TOKEN_URL || !env.OAUTH_USERINFO_URL || !env.OAUTH_CLIENT_ID || !env.OAUTH_REDIRECT_URI || !env.OAUTH_ISSUER) {
     throw new HttpError(500, "AUTH_NOT_CONFIGURED", "OAuth authentication is not configured");
   }
 }
@@ -50,10 +50,18 @@ async function callback(request: Request, env: Env): Promise<Response> {
   const state = url.searchParams.get("state");
   if (!code || !state) throw new HttpError(400, "AUTH_INVALID", "Authentication response is incomplete");
   const { verifier } = await validateOAuthState(request, env, state);
+  const tokenRequest = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: env.OAUTH_REDIRECT_URI,
+    client_id: env.OAUTH_CLIENT_ID,
+    code_verifier: verifier,
+  });
+  if (env.OAUTH_CLIENT_SECRET) tokenRequest.set("client_secret", env.OAUTH_CLIENT_SECRET);
   const tokenData = parse(OAuthTokenSchema, await oauthJson(env.OAUTH_TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: env.OAUTH_REDIRECT_URI, client_id: env.OAUTH_CLIENT_ID, client_secret: env.OAUTH_CLIENT_SECRET, code_verifier: verifier }),
+    body: tokenRequest,
   }), "OAuth token response is invalid");
   const identity = parse(OAuthUserSchema, await oauthJson(env.OAUTH_USERINFO_URL, {
     headers: { authorization: `Bearer ${tokenData.access_token}`, accept: "application/json" },

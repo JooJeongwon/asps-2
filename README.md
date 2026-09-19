@@ -18,7 +18,7 @@
 - Queue consumer: Notion 조회·content hash 검증 후 작성 → 제안 → 채점 → 저장을 target stage까지 실행
 - user-scoped profile/job 조회·생성 거부 및 1000.school contract test 포함
 
-인증은 설정한 OAuth/OIDC 공급자 로그인과 HttpOnly 세션을 사용한다. OAuth 로그인은 대시보드 접근에만 필요하고, 실제 자동화는 사용자별 credential과 Queue가 서버에서 수행한다. 로컬/배포 환경에서는 `.env.example`의 `OAUTH_*` 값과 Cloudflare Secret `SESSION_SECRET`, `CREDENTIAL_ENCRYPTION_KEY`를 설정해야 한다.
+인증은 Google OIDC 로그인과 HttpOnly 세션을 사용한다. OAuth 로그인은 대시보드 접근에만 필요하고, 실제 자동화는 사용자별 credential과 Queue가 서버에서 수행한다. Google의 공개 endpoint와 client ID는 `wrangler.jsonc`에 설정되어 있으며, 로컬에서는 `.env.example`을 사용한다.
 
 ## 시작
 
@@ -35,6 +35,6 @@ npm run dev
 - `SESSION_SECRET`
 - `WEBHOOK_SIGNING_SECRET`
 
-OAuth 공급자에는 `OAUTH_REDIRECT_URI`를 callback URL로 등록한다. 브라우저 변경 요청에는 CSRF token을 자동으로 붙이며, Queue와 Notion webhook은 사용자 로그인 세션을 요구하지 않는다.
+Google Cloud Console에 `OAUTH_REDIRECT_URI`와 정확히 같은 callback URL을 등록한다. Google PKCE public client는 `OAUTH_CLIENT_SECRET` 없이 동작하며, secret을 사용하는 client라면 Cloudflare Secret으로만 설정한다. client ID는 공개값이지만 client secret, session secret, credential encryption key는 저장소에 넣지 않는다. 브라우저 변경 요청에는 CSRF token을 자동으로 붙이며, Queue와 Notion webhook은 사용자 로그인 세션을 요구하지 않는다.
 
 Notion webhook action에는 `x-asps-webhook-secret` custom header를 설정한다. 1000.school token은 `Authorization: Bearer` header로 전송하며, 실제 계정의 인증 방식이 다르면 adapter를 조정해야 한다.

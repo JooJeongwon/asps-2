@@ -1,8 +1,16 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "asps",
+  "name": "asps-2",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
+  "vars": {
+    "OAUTH_ISSUER": "https://accounts.google.com",
+    "OAUTH_AUTHORIZATION_URL": "https://accounts.google.com/o/oauth2/v2/auth",
+    "OAUTH_TOKEN_URL": "https://oauth2.googleapis.com/token",
+    "OAUTH_USERINFO_URL": "https://openidconnect.googleapis.com/v1/userinfo",
+    "OAUTH_CLIENT_ID": "291100854104-6vpcf4a5hkjucocqcvl4ku8a2llc62u5.apps.googleusercontent.com",
+    "OAUTH_REDIRECT_URI": "https://asps-2.jwjoo0512.workers.dev/api/auth/callback"
+  },
   "d1_databases": [
     {
       "binding": "DB",

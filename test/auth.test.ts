@@ -15,7 +15,7 @@ const env = {
 } as Env;
 
 test("OAuth login uses PKCE and an HttpOnly state cookie", async () => {
-  const result = await createOAuthAuthorization(env);
+  const result = await createOAuthAuthorization({ ...env, OAUTH_CLIENT_SECRET: undefined });
   const url = new URL(result.location);
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   assert.equal(url.searchParams.get("response_type"), "code");
