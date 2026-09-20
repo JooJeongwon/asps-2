@@ -16,7 +16,7 @@
 8. Worker가 content hash 기반 job을 만들고 Queue에는 `userId`, `profileId`, `jobId`만 보낸다.
 9. Queue consumer가 처리 직전에 user/profile/connection/credential 상태를 다시 확인한다.
 10. Notion page와 block을 조회·검증한다.
-11. target stage에 따라 1000.school 작성 → `organize` AI 제안 → `feedback` 텍스트 채점 → 최종 PUT 저장을 실행한다.
+11. target stage에 따라 1000.school 작성 → SSE `organize` AI 제안 → 즉시 자동 적용 → SSE `feedback` 텍스트 채점 → 최종 내용 확인을 실행한다.
 12. Worker 웹사이트 버튼, 예약 실행 또는 Notion webhook은 로그인 세션과 별개로 같은 user-scoped Queue message를 생성한다.
 
 ## 실패와 재시도

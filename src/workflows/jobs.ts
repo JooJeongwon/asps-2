@@ -258,6 +258,7 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   let current = await jobs.getDetails(userId, jobId);
   let remoteRecordId = context.job.remoteRecordId ?? stringOutput(current?.steps.find((step) => step.stage === "CREATE_DRAFT"), "remoteRecordId") ?? null;
   let suggestion = stringOutput(current?.steps.find((step) => step.stage === "AI_SUGGEST"), "suggestion");
+  let suggestionApplied = false;
 
   if (needs(targetStage, "DRAFT_CREATED")) {
     const createStep = current?.steps.find((step) => step.stage === "CREATE_DRAFT");
@@ -297,8 +298,24 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
     }
     try {
       suggestion = await requestSuggestion(schoolClient, draft!.content, context.job.targetDate);
+      if (!remoteRecordId) throw new WorkflowContractError("Draft is required before applying AI suggestion");
+      await saveDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
+      suggestionApplied = true;
       await updatePage(notionClient, page!, propertyMapping, { status: "처리중", suggestion, lastError: "" });
-      await jobs.completeStage(userId, jobId, "AI_SUGGEST", "AI_SUGGESTED", JSON.stringify({ suggestion }));
+      await jobs.completeStage(userId, jobId, "AI_SUGGEST", "AI_SUGGESTED", JSON.stringify({ suggestion, applied: true }));
+    } catch (error) {
+      await fail("AI_SUGGEST", error);
+      return;
+    }
+  }
+
+  if (!remoteRecordId || suggestion === undefined) {
+    await fail("AI_SUGGEST", new WorkflowContractError("Draft and AI suggestion are required before applying suggestion"));
+    return;
+  }
+  if (!suggestionApplied) {
+    try {
+      await saveDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
     } catch (error) {
       await fail("AI_SUGGEST", error);
       return;

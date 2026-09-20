@@ -68,3 +68,22 @@ test("retry-after is preserved for retryable upstream failures", async () => {
     return error instanceof ThousandSchoolApiError && error.retryable && error.retryAfter === 17;
   });
 });
+
+test("AI endpoints use the website streaming contract", async () => {
+  const requests: Request[] = [];
+  const client = new ThousandSchoolClient({
+    baseUrl: "https://api.example.invalid",
+    fetcher: fetcher((request) => {
+      requests.push(request);
+      const feedback = request.url.includes("/feedback");
+      const field = feedback ? "feedback" : "organized_content";
+      const body = `event: chunk\ndata: {"content":"rich "}\n\nevent: done\ndata: {"date":"2026-09-19","${field}":"rich result"}\n\n`;
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    }),
+  });
+
+  assert.equal((await client.organizeDailySnippet("raw", true)).organized_content, "rich result");
+  assert.equal((await client.getDailySnippetFeedback(true)).feedback, "rich result");
+  assert.ok(requests.every((request) => new URL(request.url).searchParams.get("stream") === "1"));
+  assert.ok(requests.every((request) => request.headers.get("accept") === "text/event-stream"));
+});

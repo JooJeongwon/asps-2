@@ -5,6 +5,7 @@ import type {
 
 export interface ThousandSchoolWorkflowClient {
   getDailySnippetPageData(params: { date: string }): Promise<DailySnippetPageDataResponse>;
+  getDailySnippet(snippetId: number): Promise<DailySnippetResponse>;
   createDailySnippet(content: string): Promise<DailySnippetResponse>;
   updateDailySnippet(snippetId: number, content: string): Promise<DailySnippetResponse>;
   organizeDailySnippet(content: string, stream?: boolean): Promise<{ date: string; organized_content: string }>;
@@ -56,7 +57,7 @@ export async function requestSuggestion(
   content: string,
   targetDate: string,
 ): Promise<string> {
-  const result = await client.organizeDailySnippet(content, false);
+  const result = await client.organizeDailySnippet(content, true);
   assertDate(result.date, targetDate, "AI suggestion");
   return result.organized_content;
 }
@@ -65,7 +66,7 @@ export async function requestScore(
   client: ThousandSchoolWorkflowClient,
   targetDate: string,
 ): Promise<string> {
-  const result = await client.getDailySnippetFeedback(false);
+  const result = await client.getDailySnippetFeedback(true);
   assertDate(result.date, targetDate, "AI score");
   return result.feedback ?? "";
 }
@@ -76,7 +77,11 @@ export async function saveDraft(
   content: string,
   targetDate: string,
 ): Promise<DailySnippetResponse> {
-  const result = await client.updateDailySnippet(snippetId(draftId), content);
+  const id = snippetId(draftId);
+  const current = await client.getDailySnippet(id);
+  assertDate(current.date, targetDate, "Saved draft");
+  if (current.content === content) return current;
+  const result = await client.updateDailySnippet(id, content);
   assertDate(result.date, targetDate, "Saved draft");
   if (result.content !== content) throw new WorkflowContractError("Saved draft content does not match the requested content");
   return result;

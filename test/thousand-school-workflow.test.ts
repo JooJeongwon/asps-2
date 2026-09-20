@@ -20,24 +20,27 @@ const response = (content: string) => ({
 
 function client(): ThousandSchoolWorkflowClient & { calls: string[] } {
   const calls: string[] = [];
+  let content = "";
   return {
     calls,
     async getDailySnippetPageData() { calls.push("page-data"); return { snippet: null, read_only: false, prev_id: null, next_id: null }; },
-    async createDailySnippet(content) { calls.push("create"); return response(content); },
-    async updateDailySnippet(_id, content) { calls.push("update"); return response(content); },
-    async organizeDailySnippet() { calls.push("organize"); return { date: "2026-09-19", organized_content: "organized content" }; },
-    async getDailySnippetFeedback() { calls.push("feedback"); return { date: "2026-09-19", feedback: "feedback text" }; },
+    async getDailySnippet() { calls.push("get"); return response(content); },
+    async createDailySnippet(value) { calls.push("create"); content = value; return response(content); },
+    async updateDailySnippet(_id, value) { calls.push("update"); content = value; return response(content); },
+    async organizeDailySnippet(_content, stream) { calls.push(`organize:${String(stream)}`); return { date: "2026-09-19", organized_content: "organized content" }; },
+    async getDailySnippetFeedback(stream) { calls.push(`feedback:${String(stream)}`); return { date: "2026-09-19", feedback: "feedback text" }; },
   };
 }
 
-test("mapped workflow runs organize, feedback, and final update", async () => {
+test("mapped workflow applies the streamed suggestion before feedback without a duplicate final update", async () => {
   const api = client();
   const draft = await ensureDraft(api, { content: "raw content", targetDate: "2026-09-19", remoteRecordId: null });
   const suggestion = await requestSuggestion(api, "raw content", "2026-09-19");
+  await saveDraft(api, String(draft.id), suggestion, "2026-09-19");
   const score = await requestScore(api, "2026-09-19");
   const saved = await saveDraft(api, String(draft.id), suggestion, "2026-09-19");
 
-  assert.deepEqual(api.calls, ["page-data", "create", "organize", "feedback", "update"]);
+  assert.deepEqual(api.calls, ["page-data", "create", "organize:true", "get", "update", "feedback:true", "get"]);
   assert.equal(suggestion, "organized content");
   assert.equal(score, "feedback text");
   assert.equal(saved.content, "organized content");

@@ -64,9 +64,9 @@ OpenAPI에서 다음 endpoint는 확인되지 않았다.
 | 내부 단계 | API | 저장 결과 |
 | --- | --- | --- |
 | 작성 | `POST /daily-snippets` 또는 기존 ID에 `PUT /daily-snippets/{snippet_id}` | remote snippet ID |
-| AI 제안 | `POST /daily-snippets/organize` | `organized_content`를 Notion suggestion property에 기록 |
-| AI 채점 | `GET /daily-snippets/feedback` | `feedback` 텍스트를 Notion score/feedback property에 기록 |
-| 저장 | `PUT /daily-snippets/{snippet_id}` | AI 제안 내용을 최종 content로 반영 |
+| AI 제안 | `POST /daily-snippets/organize?stream=1` | SSE `organized_content`를 즉시 draft에 적용하고 Notion suggestion property에 기록 |
+| AI 채점 | `GET /daily-snippets/feedback?stream=1` | 적용된 제안에 대한 SSE `feedback`을 Notion score/feedback property에 기록 |
+| 저장 | `GET`, 필요 시 `PUT /daily-snippets/{snippet_id}` | 자동 적용된 AI 제안 내용을 확인하고 중복 PUT 방지 |
 
 `feedback`은 숫자 점수가 아니라 텍스트이므로, 숫자 점수가 필요한 사용자는 별도 변환 계약이 필요하다. `GET /daily-snippets/feedback`은 snippet ID를 받지 않고 인증된 사용자의 현재 daily snippet을 대상으로 하므로, 요청 날짜가 job의 `targetDate`와 같은지 검증한다.
 

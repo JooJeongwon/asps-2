@@ -60,6 +60,36 @@ export class ThousandSchoolApiError extends Error {
   }
 }
 
+async function ssePayload(response: Response, resultField: "organized_content" | "feedback"): Promise<unknown> {
+  if ((response.headers.get("content-type") ?? "").includes("application/json")) return response.json();
+
+  const result: Record<string, unknown> = {};
+  let chunks = "";
+  for (const block of (await response.text()).split(/\r?\n\r?\n/)) {
+    let event = "message";
+    const data: string[] = [];
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      if (line.startsWith("data:")) data.push(line.slice(5).trim());
+    }
+    if (!data.length) continue;
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data.join("\n"));
+    } catch (error) {
+      throw new ThousandSchoolApiError("INVALID_RESPONSE", "1000.school returned invalid SSE data", response.status, false, { cause: error });
+    }
+    if (event === "error") throw new ThousandSchoolApiError("UPSTREAM_ERROR", "1000.school AI processing failed", response.status);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+    const record = payload as Record<string, unknown>;
+    if (event === "chunk" && typeof record.content === "string") chunks += record.content;
+    if (event === "done" || event === "message") Object.assign(result, record);
+  }
+  if (typeof result[resultField] !== "string" && chunks) result[resultField] = chunks;
+  return result;
+}
+
 export class ThousandSchoolClient {
   private readonly baseUrl: string;
   private readonly headers: Headers;
@@ -138,17 +168,23 @@ export class ThousandSchoolClient {
   }
 
   async organizeDailySnippet(content: string, stream?: boolean): Promise<DailySnippetOrganizeResponse> {
-    const query = stream === undefined ? "" : `?stream=${String(stream)}`;
+    const query = stream === true ? "?stream=1" : stream === false ? "?stream=false" : "";
     return this.request(
       `/daily-snippets/organize${query}`,
-      { method: "POST", body: JSON.stringify(DailySnippetContentSchema.parse({ content })) },
+      { method: "POST", headers: stream ? { accept: "text/event-stream" } : undefined, body: JSON.stringify(DailySnippetContentSchema.parse({ content })) },
       DailySnippetOrganizeResponseSchema,
+      stream ? (response) => ssePayload(response, "organized_content") : undefined,
     );
   }
 
   async getDailySnippetFeedback(stream?: boolean): Promise<DailySnippetFeedbackResponse> {
-    const query = stream === undefined ? "" : `?stream=${String(stream)}`;
-    return this.request(`/daily-snippets/feedback${query}`, { method: "GET" }, DailySnippetFeedbackResponseSchema);
+    const query = stream === true ? "?stream=1" : stream === false ? "?stream=false" : "";
+    return this.request(
+      `/daily-snippets/feedback${query}`,
+      { method: "GET", headers: stream ? { accept: "text/event-stream" } : undefined },
+      DailySnippetFeedbackResponseSchema,
+      stream ? (response) => ssePayload(response, "feedback") : undefined,
+    );
   }
 
   async getDailySnippetPageData(params: PageDataParams = {}): Promise<DailySnippetPageDataResponse> {
@@ -163,9 +199,9 @@ export class ThousandSchoolClient {
     );
   }
 
-  private async request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T>;
+  private async request<T>(path: string, init: RequestInit, schema: z.ZodType<T>, decode?: (response: Response) => Promise<unknown>): Promise<T>;
   private async request(path: string, init: RequestInit): Promise<void>;
-  private async request<T>(path: string, init: RequestInit, schema?: z.ZodType<T>): Promise<T | void> {
+  private async request<T>(path: string, init: RequestInit, schema?: z.ZodType<T>, decode?: (response: Response) => Promise<unknown>): Promise<T | void> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const headers = new Headers(this.headers);
@@ -200,8 +236,9 @@ export class ThousandSchoolClient {
       if (!schema) return;
       let payload: unknown;
       try {
-        payload = await response.json();
+        payload = await (decode ? decode(response) : response.json());
       } catch (error) {
+        if (error instanceof ThousandSchoolApiError) throw error;
         throw new ThousandSchoolApiError("INVALID_RESPONSE", "1000.school returned invalid JSON", response.status, false, {
           cause: error,
         });

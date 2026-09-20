@@ -44,7 +44,7 @@ flowchart TD
 3. Queue에는 `userId`, `profileId`, `jobId` 같은 불투명 ID만 넣는다.
 4. consumer가 외부 호출 직전에 사용자와 credential 상태를 다시 확인한다.
 5. Queue consumer가 Notion page와 child block을 조회하고 `content_hash`를 재검증한다.
-6. 검증 성공 후 target stage에 따라 작성 → `organize` AI 제안 → `feedback` 텍스트 채점 → 저장 단계를 실행한다.
+6. 검증 성공 후 target stage에 따라 작성 → SSE `organize` AI 제안 → 즉시 자동 적용 → SSE `feedback` 텍스트 채점 → 최종 확인 단계를 실행한다.
 7. 성공한 단계와 `content_hash`를 D1에 기록하고, 마지막에 같은 사용자의 Notion만 갱신한다.
 
 Queue는 at-least-once이므로 `jobs`의 unique idempotency key와 조건부 상태 전이를 함께 사용한다. KV는 권한 원장이나 lock으로 사용하지 않는다. 초기에는 D1 조건부 전이로 시작하고, 실제 contention이 확인될 때만 Durable Object를 추가한다.

@@ -16,7 +16,7 @@
 - job API: `/api/jobs`, `/api/jobs/:id`, `/api/jobs/:id/action`, `/api/jobs/:id/retry`, `/api/jobs/:id/cancel`
 - Notion sync API: `POST /api/sync/notion`
 - Notion `작성완료` webhook이 최신 page를 확인해 `FULL_AUTO` 멱등 job을 Queue에 등록한다. `작성중`은 작성 중인 상태로만 사용한다.
-- Queue consumer: Notion 조회·content hash 검증 후 작성 → 제안 → 채점 → 저장을 target stage까지 실행
+- Queue consumer: Notion 조회·content hash 검증 후 작성 → SSE 제안 → 즉시 자동 적용 → 채점 → 최종 확인을 target stage까지 실행
 - user-scoped profile/job 조회·생성 거부 및 1000.school contract test 포함
 
 인증은 Google OIDC 로그인과 HttpOnly 세션을 사용한다. OAuth 로그인은 대시보드 접근에만 필요하고, 실제 자동화는 사용자별 credential과 Queue가 서버에서 수행한다. Google의 공개 endpoint와 client ID는 `wrangler.jsonc`에 설정되어 있으며, 로컬에서는 `.env.example`을 사용한다.
