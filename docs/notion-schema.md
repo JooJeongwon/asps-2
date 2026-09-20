@@ -16,7 +16,7 @@
   "title": "제목",
   "date": "날짜",
   "status": "상태",
-  "jobId": "ASPS Job ID",
+  "jobId": "asps-2 Job ID",
   "remoteId": "1000school ID",
   "suggestion": "AI 제안",
   "score": "AI 피드백",
@@ -33,7 +33,7 @@
 | `title` | `title` | 초안 식별용 제목 | mapping 보관 |
 | `date` | `date` | job `targetDate` | 읽기 |
 | `status` | `select` 또는 `status` | `작성중`에서 `작성완료` 전환 감지 | 읽기/쓰기 |
-| `jobId` | `rich_text` | ASPS job ID | sync 시 기록 |
+| `jobId` | `rich_text` | asps-2 job ID | sync 시 기록 |
 | `remoteId` | `rich_text` | 1000.school ID | 작성 단계에서 기록 |
 | `suggestion` | `rich_text` | `organize` 결과 | AI 제안 단계에서 기록 |
 | `score` | `rich_text` 또는 숫자로 변환 가능한 `number` | `feedback` 결과 | AI 채점 단계에서 기록 |

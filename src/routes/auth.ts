@@ -13,7 +13,7 @@ const OAuthUserSchema = z.object({
   name: z.string().nullable().optional(),
 });
 
-const LOGIN_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ASPS 로그인</title><style>body{font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:24px;text-align:center}a{display:inline-block;padding:12px 18px;background:#17202a;color:#fff;border-radius:8px;text-decoration:none}</style></head><body><h1>ASPS</h1><p>Daily snippet 자동화를 시작하세요.</p><a href="/api/auth/login">로그인</a></body></html>`;
+const LOGIN_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>asps-2 로그인</title><style>body{font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:24px;text-align:center}a{display:inline-block;padding:12px 18px;background:#17202a;color:#fff;border-radius:8px;text-decoration:none}</style></head><body><h1>asps-2</h1><p>Daily snippet 자동화를 시작하세요.</p><a href="/api/auth/login">로그인</a></body></html>`;
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const result = schema.safeParse(value);

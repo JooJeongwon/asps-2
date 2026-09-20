@@ -6,7 +6,7 @@ const APP_HTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="same-origin">
-  <title>ASPS · Daily snippets</title>
+  <title>asps-2 · Daily snippets</title>
   <style>
     :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; color: #17202a; background: #f5f7fa; }
     * { box-sizing: border-box; }
@@ -42,7 +42,7 @@ const APP_HTML = `<!doctype html>
 </head>
 <body>
   <header>
-    <div><h1>ASPS</h1><div class="muted">사용자별 Daily snippet 자동화</div></div>
+    <div><h1>asps-2</h1><div class="muted">사용자별 Daily snippet 자동화</div></div>
     <div class="row"><button id="refresh" class="secondary" type="button">새로고침</button><button id="logout" class="secondary" type="button">로그아웃</button></div>
   </header>
   <div id="message" role="status" aria-live="polite"></div>
@@ -65,7 +65,7 @@ const APP_HTML = `<!doctype html>
         <label>제목 property<input name="title" value="제목"></label>
         <label>날짜 property<input name="date" value="날짜" required></label>
         <label>상태 property<input name="status" value="상태" required><span class="muted">Notion 옵션: 작성중 → 작성완료 → 처리중 → 완료 / 오류</span></label>
-        <label>ASPS job ID property<input name="jobId" value="ASPS Job ID"></label>
+        <label>asps-2 job ID property<input name="jobId" value="asps-2 Job ID"></label>
         <label>1000.school ID property<input name="remoteId" value="1000school ID"></label>
         <label>AI 제안 property<input name="suggestion" value="AI 제안"></label>
         <label>AI 채점/피드백 property<input name="score" value="AI 피드백"></label>
