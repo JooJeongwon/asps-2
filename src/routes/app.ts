@@ -106,6 +106,7 @@ const APP_HTML = `<!doctype html>
     const state = { me: null, jobs: [], csrf: '' };
     const $ = (selector) => document.querySelector(selector);
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[char]);
+    const maskIdentifier = (value) => { const text = String(value ?? ''); return text.length > 12 ? text.slice(0, 8) + '••••' + text.slice(-4) : '••••'; };
     const setMessage = (message, kind) => { const node = $('#message'); node.textContent = message || ''; node.className = kind || ''; };
     const api = async (path, options) => {
       const init = options || {};
@@ -120,7 +121,7 @@ const APP_HTML = `<!doctype html>
     };
     const connectionLabel = (name, connection) => {
       if (!connection) return '<div class="card"><h3>' + name + '</h3><span class="muted">연결되지 않음</span></div>';
-      return '<div class="card"><h3>' + name + '</h3><div class="status ' + (connection.status === 'ACTIVE' ? 'ok' : 'warn') + '">' + escapeHtml(connection.status) + '</div><div class="muted">ID <code>' + escapeHtml(connection.id) + '</code></div><div class="muted">Credential ' + escapeHtml(connection.credentialStatus) + '</div></div>';
+      return '<div class="card"><h3>' + name + '</h3><div class="status ' + (connection.status === 'ACTIVE' ? 'ok' : 'warn') + '">' + escapeHtml(connection.status) + '</div><div class="muted">연결 ID <code>' + escapeHtml(maskIdentifier(connection.id)) + '</code></div><div class="muted">Credential ' + escapeHtml(connection.credentialStatus) + ' · token 비공개</div></div>';
     };
     const stageNames = ['PENDING', 'FETCHED', 'DRAFT_CREATED', 'AI_SUGGESTED', 'AI_SCORED', 'SAVED'];
     const renderJobs = () => {
@@ -141,8 +142,8 @@ const APP_HTML = `<!doctype html>
       $('#connections').innerHTML = connectionLabel('Notion', me.notion) + connectionLabel('1000.school', me.thousandSchool);
       const notionSelect = $('#profile-form [name="notionConnectionId"]');
       const schoolSelect = $('#profile-form [name="thousandSchoolAccountId"]');
-      notionSelect.innerHTML = me.notion ? '<option value="' + escapeHtml(me.notion.id) + '">' + escapeHtml(me.notion.id) + '</option>' : '<option value="">Notion 연결 필요</option>';
-      schoolSelect.innerHTML = me.thousandSchool ? '<option value="' + escapeHtml(me.thousandSchool.id) + '">' + escapeHtml(me.thousandSchool.id) + '</option>' : '<option value="">1000.school 연결 필요</option>';
+      notionSelect.innerHTML = me.notion ? '<option value="' + escapeHtml(me.notion.id) + '">내 Notion 연결 (' + escapeHtml(maskIdentifier(me.notion.id)) + ')</option>' : '<option value="">Notion 연결 필요</option>';
+      schoolSelect.innerHTML = me.thousandSchool ? '<option value="' + escapeHtml(me.thousandSchool.id) + '">내 1000.school 연결 (' + escapeHtml(maskIdentifier(me.thousandSchool.id)) + ')</option>' : '<option value="">1000.school 연결 필요</option>';
       notionSelect.disabled = !me.notion; schoolSelect.disabled = !me.thousandSchool;
       $('#profile-form button[type="submit"]').disabled = !me.notion || !me.thousandSchool;
       $('#profiles').innerHTML = me.profiles.length ? me.profiles.map((profile) => '<div class="card row" style="justify-content:space-between;margin-top:8px"><span><strong>' + escapeHtml(profile.name) + '</strong> · ' + escapeHtml(profile.defaultMode) + ' · ' + (profile.enabled ? '<span class="ok">활성</span>' : '<span class="warn">비활성</span>') + '</span><span class="row"><button class="secondary" data-edit-profile="' + escapeHtml(profile.id) + '" type="button">수정</button>' + (profile.enabled ? '<button class="secondary" data-sync-profile="' + escapeHtml(profile.id) + '" type="button">동기화</button><button class="secondary" data-disable-profile="' + escapeHtml(profile.id) + '" type="button">비활성화</button>' : '<button class="secondary" data-enable-profile="' + escapeHtml(profile.id) + '" type="button">활성화</button>') + '<button class="secondary" data-delete-profile="' + escapeHtml(profile.id) + '" type="button">삭제</button></span></div>').join('') : '<span class="muted">아직 profile이 없습니다.</span>';
