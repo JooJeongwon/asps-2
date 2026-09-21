@@ -108,9 +108,41 @@ function statusProperty(page: NotionPage, name: string, value: string): Record<s
   throw new Error(`Notion property ${name} must be select, status, or rich_text`);
 }
 
+function scoreMarkdown(value: string): string {
+  let feedback: Record<string, unknown>;
+  try {
+    feedback = object(JSON.parse(value));
+  } catch {
+    return value;
+  }
+  if (typeof feedback.total_score !== "number") return value;
+
+  const lines = ["# AI 회고 분석", "", "## TOTAL SCORE", `**${feedback.total_score}점**`];
+  if (typeof feedback.key_learning === "string") lines.push("", "## 핵심 배움", feedback.key_learning);
+
+  const labels: Record<string, string> = {
+    record_completeness: "기록 완성도",
+    learning_signal_detection: "학습 신호 감지",
+    cause_effect_connection: "원인과 결과 연결",
+    action_translation: "실행 전환",
+    learning_attitude_consistency: "학습 태도 일관성",
+  };
+  const details = Object.entries(labels).flatMap(([key, label]) => {
+    const score = object(object(feedback.scores)[key]);
+    return typeof score.score === "number" && typeof score.max_score === "number"
+      ? [`- **${label}**: ${score.score} / ${score.max_score}`]
+      : [];
+  });
+  if (details.length) lines.push("", "## 상세 분석", ...details);
+  if (typeof feedback.next_action === "string") lines.push("", "## 다음 실행 액션", feedback.next_action);
+  if (typeof feedback.mentor_comment === "string") lines.push("", "## 멘토 코멘트", feedback.mentor_comment);
+  if (typeof feedback.next_reflection_mission === "string") lines.push("", "## 다음 회고 미션", feedback.next_reflection_mission);
+  return lines.join("\n");
+}
+
 function scoreProperty(page: NotionPage, name: string, value: string): Record<string, unknown> {
   const type = typeof object(page.properties[name]).type === "string" ? object(page.properties[name]).type as string : "";
-  if (type === "rich_text" || type === "title") return textProperty(page, name, value);
+  if (type === "rich_text" || type === "title") return textProperty(page, name, scoreMarkdown(value));
   if (type === "number") {
     const number = Number(value);
     if (Number.isFinite(number)) return { number };
