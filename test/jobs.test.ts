@@ -18,7 +18,7 @@ test("job details query steps in the current user's scope", async () => {
       return { bind: (...args: unknown[]) => ({
         all: async () => {
           assert.deepEqual(args, ["user-1", "job-1"]);
-          return { results: [{ stage: "FETCH", status: "SUCCEEDED", attempt_count: 1, safe_error_code: null, started_at: null, finished_at: null }] };
+          return { results: [{ stage: "FETCH", status: "SUCCEEDED", run_id: null, attempt_count: 1, safe_error_code: null, started_at: null, finished_at: null }] };
         },
       }) };
     },
@@ -68,4 +68,58 @@ test("deleting a job removes steps before the scoped job row", async () => {
   assert.deepEqual(statements[0].args, ["user-1", "job-1"]);
   assert.match(statements[1].sql, /user_id = \? AND id = \?/);
   assert.deepEqual(statements[1].args, ["user-1", "job-1"]);
+});
+
+test("a redelivered queue message can resume its own running stage", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const db = {
+    prepare(sql: string) {
+      return { bind: (...args: unknown[]) => ({
+        run: async () => {
+          statements.push({ sql, args });
+          return { meta: { changes: sql.includes("UPDATE job_steps") ? 1 : 0 } };
+        },
+      }) };
+    },
+  } as unknown as D1Database;
+
+  assert.equal(await new JobRepository(db).beginStage("user-1", "job-1", "AI_SUGGEST", "message-1"), true);
+  assert.match(statements[0].sql, /status = 'RUNNING' AND run_id = \?/);
+  assert.deepEqual(statements[0].args.slice(0, 1), ["message-1"]);
+});
+
+test("applying a legacy suggestion invalidates its old score", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const db = {
+    prepare(sql: string) {
+      return { bind: (...args: unknown[]) => {
+        statements.push({ sql, args });
+        return {};
+      } };
+    },
+    batch: async () => [],
+  } as unknown as D1Database;
+
+  await new JobRepository(db).resetAfterSuggestion("user-1", "job-1");
+  assert.match(statements[0].sql, /stage IN \('AI_SCORE', 'SAVE'\)/);
+  assert.deepEqual(statements[0].args, ["user-1", "job-1"]);
+  assert.match(statements[1].sql, /status = 'AI_SUGGESTED'/);
+  assert.deepEqual(statements[1].args.slice(1), ["user-1", "job-1"]);
+});
+
+test("an ambiguous AI result cannot be blindly retried", async () => {
+  const db = {
+    prepare() {
+      return { bind: () => ({ first: async () => ({
+        id: "job-1", user_id: "user-1", profile_id: "profile-1", notion_page_id: "page-1",
+        target_date: "2026-09-21", mode: "FULL_AUTO", status: "FAILED_FINAL", content_hash: "a".repeat(64),
+        remote_record_id: "101", attempt_count: 1, next_retry_at: null, last_error_code: "AI_RESULT_AMBIGUOUS",
+        last_error_message: "unknown", created_at: "", updated_at: "",
+      }) }) };
+    },
+  } as unknown as D1Database;
+
+  await assert.rejects(new JobRepository(db).retry("user-1", "job-1"), (error: unknown) => {
+    return error instanceof Error && "code" in error && error.code === "AI_RESULT_AMBIGUOUS";
+  });
 });

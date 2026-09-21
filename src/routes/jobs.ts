@@ -86,6 +86,7 @@ export async function handleJobs(request: Request, env: Env, user: User): Promis
       const job = await repository.get(user.id, jobId);
       if (!job) return json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
       if (job.status === "CANCELLED") throw new HttpError(409, "JOB_CANCELLED", "Job is cancelled");
+      if (job.lastErrorCode === "AI_RESULT_AMBIGUOUS") throw new HttpError(409, "AI_RESULT_AMBIGUOUS", "Inspect 1000.school before starting a new job");
       const targetStage: JobTargetStage = parsed.action === "SUGGEST"
         ? "AI_SUGGESTED"
         : parsed.action === "SCORE"

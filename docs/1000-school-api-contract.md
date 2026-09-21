@@ -45,10 +45,12 @@
 | 401, 403 | `AUTH_REQUIRED` | 아니오 |
 | 429 | `RATE_LIMITED` | 예 |
 | 5xx | `UPSTREAM_ERROR` | 예 |
-| network/timeout | `NETWORK_ERROR` | 예 |
+| network/timeout | `NETWORK_ERROR` | 일반 조회만 예; 결과를 조회할 수 없는 AI 요청은 아니오 |
 | JSON/schema 불일치 | `INVALID_RESPONSE` | 아니오 |
 
-기본 timeout은 10초다. `Retry-After`가 초 또는 HTTP-date로 오면 adapter가 초 단위로 보존하며, Queue는 최대 300초로 제한해 사용한다. 헤더가 없으면 exponential backoff와 jitter를 사용한다.
+기본 timeout은 SSE 완료 시간을 고려해 60초다. `Retry-After`가 초 또는 HTTP-date로 오면 adapter가 초 단위로 보존하며, Queue는 최대 300초로 제한해 사용한다. 헤더가 없으면 exponential backoff와 jitter를 사용한다.
+
+SSE AI 요청이 연결 중단이나 5xx로 끝나면 생성 완료 여부를 확인할 API가 없으므로 `AI_RESULT_AMBIGUOUS`로 남기고 자동·일반 재시도를 막는다. 사용자가 1000.school 결과를 확인한 뒤 새 job을 시작해야 한다.
 
 ## 자동화 단계와 승인된 MVP 매핑
 
@@ -69,6 +71,8 @@ OpenAPI에서 다음 endpoint는 확인되지 않았다.
 | 저장 | `GET`, 필요 시 `PUT /daily-snippets/{snippet_id}` | 자동 적용된 AI 제안 내용을 확인하고 중복 PUT 방지 |
 
 `feedback`은 숫자 점수가 아니라 텍스트이므로, 숫자 점수가 필요한 사용자는 별도 변환 계약이 필요하다. `GET /daily-snippets/feedback`은 snippet ID를 받지 않고 인증된 사용자의 현재 daily snippet을 대상으로 하므로, 요청 날짜가 job의 `targetDate`와 같은지 검증한다.
+
+Daily snippet 생성·수정과 AI 요청에는 날짜 입력이 없으므로 `targetDate`가 `Asia/Seoul`의 오늘과 다르면 외부 요청 전에 중단한다.
 
 이 매핑은 공식 API의 명시적 단계명이 아닌 사용자 승인에 따른 MVP 해석이다. 실제 운영에서 의미가 달라지면 adapter 계약을 분리해 교체한다.
 

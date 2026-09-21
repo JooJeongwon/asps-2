@@ -102,7 +102,7 @@ export class ThousandSchoolClient {
     this.headers = new Headers(options.headers);
     this.requestId = options.requestId ?? crypto.randomUUID();
     this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
-    this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.timeoutMs = options.timeoutMs ?? 60_000;
   }
 
   async getAuthStatus(): Promise<AuthStatusResponse> {
@@ -174,6 +174,7 @@ export class ThousandSchoolClient {
       { method: "POST", headers: stream ? { accept: "text/event-stream" } : undefined, body: JSON.stringify(DailySnippetContentSchema.parse({ content })) },
       DailySnippetOrganizeResponseSchema,
       stream ? (response) => ssePayload(response, "organized_content") : undefined,
+      false,
     );
   }
 
@@ -184,6 +185,7 @@ export class ThousandSchoolClient {
       { method: "GET", headers: stream ? { accept: "text/event-stream" } : undefined },
       DailySnippetFeedbackResponseSchema,
       stream ? (response) => ssePayload(response, "feedback") : undefined,
+      false,
     );
   }
 
@@ -199,9 +201,9 @@ export class ThousandSchoolClient {
     );
   }
 
-  private async request<T>(path: string, init: RequestInit, schema: z.ZodType<T>, decode?: (response: Response) => Promise<unknown>): Promise<T>;
+  private async request<T>(path: string, init: RequestInit, schema: z.ZodType<T>, decode?: (response: Response) => Promise<unknown>, retryAmbiguous?: boolean): Promise<T>;
   private async request(path: string, init: RequestInit): Promise<void>;
-  private async request<T>(path: string, init: RequestInit, schema?: z.ZodType<T>, decode?: (response: Response) => Promise<unknown>): Promise<T | void> {
+  private async request<T>(path: string, init: RequestInit, schema?: z.ZodType<T>, decode?: (response: Response) => Promise<unknown>, retryAmbiguous = true): Promise<T | void> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const headers = new Headers(this.headers);
@@ -227,7 +229,7 @@ export class ThousandSchoolClient {
           code,
           `1000.school request failed (${response.status})`,
           response.status,
-          code === "RATE_LIMITED" || response.status >= 500,
+          code === "RATE_LIMITED" || (retryAmbiguous && response.status >= 500),
           undefined,
           retryAfterSeconds(response.headers.get("retry-after")),
         );
@@ -253,7 +255,7 @@ export class ThousandSchoolClient {
       return parsed.data;
     } catch (error) {
       if (error instanceof ThousandSchoolApiError) throw error;
-      throw new ThousandSchoolApiError("NETWORK_ERROR", "1000.school request failed", undefined, true, {
+      throw new ThousandSchoolApiError("NETWORK_ERROR", "1000.school request failed", undefined, retryAmbiguous, {
         cause: error,
       });
     } finally {

@@ -34,6 +34,7 @@ export interface Job {
 export interface JobStep {
   stage: JobStepStage;
   status: JobStepStatus;
+  runId: string | null;
   attemptCount: number;
   outputRef: string | null;
   safeErrorCode: string | null;
@@ -104,6 +105,7 @@ function job(row: JobRow): Job {
 function step(row: {
   stage: JobStepStage;
   status: JobStepStatus;
+  run_id: string | null;
   attempt_count: number;
   output_ref: string | null;
   safe_error_code: string | null;
@@ -113,6 +115,7 @@ function step(row: {
   return {
     stage: row.stage,
     status: row.status,
+    runId: row.run_id,
     attemptCount: row.attempt_count,
     outputRef: row.output_ref,
     safeErrorCode: row.safe_error_code,
@@ -173,7 +176,7 @@ export class JobRepository {
     if (!current) return null;
     const { results } = await this.db
       .prepare(
-        `SELECT stage, status, attempt_count, output_ref, safe_error_code, started_at, finished_at
+        `SELECT stage, status, run_id, attempt_count, output_ref, safe_error_code, started_at, finished_at
          FROM job_steps WHERE user_id = ? AND job_id = ?
          ORDER BY CASE stage
            WHEN 'FETCH' THEN 1 WHEN 'CREATE_DRAFT' THEN 2 WHEN 'AI_SUGGEST' THEN 3
@@ -266,6 +269,9 @@ export class JobRepository {
   async retry(userId: string, jobId: string): Promise<Job> {
     const current = await this.get(userId, jobId);
     if (!current) throw new HttpError(404, "NOT_FOUND", "Not found");
+    if (current.lastErrorCode === "AI_RESULT_AMBIGUOUS") {
+      throw new HttpError(409, "AI_RESULT_AMBIGUOUS", "Inspect 1000.school before starting a new job");
+    }
     if (!["FAILED_RETRYABLE", "FAILED_FINAL", "AUTH_REQUIRED"].includes(current.status)) {
       throw new HttpError(409, "JOB_NOT_RETRYABLE", "Job is not ready for retry");
     }
@@ -284,13 +290,14 @@ export class JobRepository {
     return result;
   }
 
-  async beginStage(userId: string, jobId: string, stage: JobStepStage): Promise<boolean> {
+  async beginStage(userId: string, jobId: string, stage: JobStepStage, runId: string): Promise<boolean> {
     const result = await this.db
       .prepare(
-        `UPDATE job_steps SET status = 'RUNNING', attempt_count = attempt_count + 1, started_at = ?
-         WHERE user_id = ? AND job_id = ? AND stage = ? AND status IN ('PENDING', 'FAILED')`,
+        `UPDATE job_steps SET status = 'RUNNING', run_id = ?, attempt_count = attempt_count + 1, started_at = ?
+         WHERE user_id = ? AND job_id = ? AND stage = ?
+           AND (status IN ('PENDING', 'FAILED') OR (status = 'RUNNING' AND run_id = ?))`,
       )
-      .bind(new Date().toISOString(), userId, jobId, stage)
+      .bind(runId, new Date().toISOString(), userId, jobId, stage, runId)
       .run();
     if (result.meta.changes !== 1) return false;
     await this.db
@@ -298,6 +305,26 @@ export class JobRepository {
       .bind(new Date().toISOString(), userId, jobId)
       .run();
     return true;
+  }
+
+  async setStageOutput(userId: string, jobId: string, stage: JobStepStage, outputRef: string): Promise<void> {
+    await this.db
+      .prepare("UPDATE job_steps SET output_ref = ? WHERE user_id = ? AND job_id = ? AND stage = ?")
+      .bind(outputRef, userId, jobId, stage)
+      .run();
+  }
+
+  async resetAfterSuggestion(userId: string, jobId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db.prepare(
+        `UPDATE job_steps SET status = 'PENDING', output_ref = NULL, safe_error_code = NULL,
+         run_id = NULL, started_at = NULL, finished_at = NULL
+         WHERE user_id = ? AND job_id = ? AND stage IN ('AI_SCORE', 'SAVE')`,
+      ).bind(userId, jobId),
+      this.db.prepare("UPDATE jobs SET status = 'AI_SUGGESTED', updated_at = ? WHERE user_id = ? AND id = ?")
+        .bind(now, userId, jobId),
+    ]);
   }
 
   async completeStage(

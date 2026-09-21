@@ -42,6 +42,7 @@ export async function handleNotionWebhook(request: Request, env: Env, connection
     const job = await new JobRepository(env.DB).getWebhookTarget(connectionId, parsed.data.jobId!);
     if (!job) throw new HttpError(404, "NOT_FOUND", "Not found");
     if (job.status === "CANCELLED") throw new HttpError(409, "JOB_CANCELLED", "Job is cancelled");
+    if (job.lastErrorCode === "AI_RESULT_AMBIGUOUS") throw new HttpError(409, "AI_RESULT_AMBIGUOUS", "Inspect 1000.school before starting a new job");
     if (job.status === "SAVED") return json({ jobId: job.id, status: job.status });
 
     const requestedStage = targetStage(parsed.data.action);

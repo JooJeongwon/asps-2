@@ -16,6 +16,7 @@ import {
   requestScore,
   requestSuggestion,
   saveDraft,
+  verifyDraft,
   WorkflowContractError,
 } from "./thousand-school";
 import type { Env } from "../types/env";
@@ -34,6 +35,8 @@ const NotionPageMessage = z.object({
 });
 const JobMessage = z.union([JobWorkflowMessage, NotionPageMessage]);
 export type JobQueueMessage = z.infer<typeof JobMessage>;
+
+class AmbiguousAiResultError extends Error {}
 
 const stageRank: Record<JobTargetStage, number> = {
   DRAFT_CREATED: 1,
@@ -67,11 +70,14 @@ function mapping(value: string): NotionPropertyMapping {
 }
 
 function safeFailure(error: unknown): { code: string; message: string; retryable: boolean; retryAfter?: number } {
+  if (error instanceof AmbiguousAiResultError) {
+    return { code: "AI_RESULT_AMBIGUOUS", message: error.message, retryable: false };
+  }
   if (error instanceof NotionApiError || error instanceof ThousandSchoolApiError) {
     return { code: error.code, message: error.message, retryable: error.retryable, retryAfter: error.retryAfter };
   }
   if (error instanceof WorkflowContractError) {
-    return { code: "WORKFLOW_CONTRACT_INVALID", message: error.message, retryable: false };
+    return { code: error.message === "Notion content changed after job creation" ? "CONTENT_CHANGED" : "WORKFLOW_CONTRACT_INVALID", message: error.message, retryable: false };
   }
   if (error instanceof Error && error.message === "Credential payload is invalid") {
     return { code: "CREDENTIAL_INVALID", message: "Stored credential is invalid", retryable: false };
@@ -98,6 +104,10 @@ function output(step: JobStep | undefined): Record<string, unknown> {
 function stringOutput(step: JobStep | undefined, key: string): string | undefined {
   const value = output(step)[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function booleanOutput(step: JobStep | undefined, key: string): boolean {
+  return output(step)[key] === true;
 }
 
 async function processNotionPage(message: Message<unknown>, env: Env, input: z.infer<typeof NotionPageMessage>): Promise<void> {
@@ -173,7 +183,7 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   const jobs = new JobRepository(env.DB);
   const connections = new ConnectionRepository(env.DB);
   const context = await jobs.executionContext(userId, jobId, profileId);
-  if (!context || context.job.status === "CANCELLED" || context.job.status === "SAVED") {
+  if (!context || context.job.status === "CANCELLED" || context.job.status === "SAVED" || context.job.lastErrorCode === "AI_RESULT_AMBIGUOUS") {
     message.ack();
     return;
   }
@@ -197,7 +207,11 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   let notionClient: NotionClient | undefined;
 
   const fail = async (stage: JobStepStage, error: unknown): Promise<void> => {
-    const failure = safeFailure(error);
+    let failure = safeFailure(error);
+    if ((stage === "AI_SUGGEST" || stage === "AI_SCORE") && error instanceof ThousandSchoolApiError
+      && (error.code === "NETWORK_ERROR" || (error.code === "UPSTREAM_ERROR" && (error.status ?? 0) >= 500))) {
+      failure = { code: "AI_RESULT_AMBIGUOUS", message: "AI request outcome is unknown; inspect 1000.school before starting a new job", retryable: false };
+    }
     const delaySeconds = failure.retryable ? retryDelaySeconds(failure.retryAfter, message.attempts) : undefined;
     if (failure.code === "AUTH_REQUIRED") {
       if (error instanceof NotionApiError) await connections.markNotionAuthRequired(userId, profileId);
@@ -226,7 +240,7 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
     const details = await jobs.getDetails(userId, jobId);
     const fetchStep = details?.steps.find((step) => step.stage === "FETCH");
     if (fetchStep?.status !== "SUCCEEDED") {
-      if (!await jobs.beginStage(userId, jobId, "FETCH")) {
+      if (!await jobs.beginStage(userId, jobId, "FETCH", message.id)) {
         message.ack();
         return;
       }
@@ -257,13 +271,25 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   }
   let current = await jobs.getDetails(userId, jobId);
   let remoteRecordId = context.job.remoteRecordId ?? stringOutput(current?.steps.find((step) => step.stage === "CREATE_DRAFT"), "remoteRecordId") ?? null;
-  let suggestion = stringOutput(current?.steps.find((step) => step.stage === "AI_SUGGEST"), "suggestion");
-  let suggestionApplied = false;
+  let suggestionStep = current?.steps.find((step) => step.stage === "AI_SUGGEST");
+  let suggestion = stringOutput(suggestionStep, "suggestion");
+  let suggestionApplied = booleanOutput(suggestionStep, "applied");
+
+  const refreshDraft = async (): Promise<void> => {
+    const blocks = await hydrateBlockTree(notionClient!, await notionClient!.listAllBlockChildren(context.job.notionPageId));
+    const latestPage = await notionClient!.retrievePage(context.job.notionPageId);
+    const latestDraft = await toNotionDraft(latestPage, blocks, propertyMapping);
+    if (latestDraft.targetDate !== context.job.targetDate || latestDraft.contentHash !== context.job.contentHash) {
+      throw new WorkflowContractError("Notion content changed after job creation");
+    }
+    page = latestPage;
+    draft = latestDraft;
+  };
 
   if (needs(targetStage, "DRAFT_CREATED")) {
     const createStep = current?.steps.find((step) => step.stage === "CREATE_DRAFT");
     if (createStep?.status !== "SUCCEEDED") {
-      if (!await jobs.beginStage(userId, jobId, "CREATE_DRAFT")) {
+      if (!await jobs.beginStage(userId, jobId, "CREATE_DRAFT", message.id)) {
         message.ack();
         return;
       }
@@ -290,17 +316,32 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   }
 
   current = await jobs.getDetails(userId, jobId);
-  const suggestionStep = current?.steps.find((step) => step.stage === "AI_SUGGEST");
+  suggestionStep = current?.steps.find((step) => step.stage === "AI_SUGGEST");
+  suggestion = stringOutput(suggestionStep, "suggestion") ?? suggestion;
+  suggestionApplied = booleanOutput(suggestionStep, "applied") || suggestionApplied;
   if (suggestionStep?.status !== "SUCCEEDED") {
-    if (!await jobs.beginStage(userId, jobId, "AI_SUGGEST")) {
+    if (suggestionStep?.status === "RUNNING" && suggestionStep.runId === message.id && suggestion === undefined) {
+      await fail("AI_SUGGEST", new AmbiguousAiResultError("AI suggestion result is ambiguous after interruption"));
+      return;
+    }
+    if (!await jobs.beginStage(userId, jobId, "AI_SUGGEST", message.id)) {
       message.ack();
       return;
     }
     try {
-      suggestion = await requestSuggestion(schoolClient, draft!.content, context.job.targetDate);
+      if (suggestion === undefined) {
+        suggestion = await requestSuggestion(schoolClient, draft!.content, context.job.targetDate);
+        await jobs.setStageOutput(userId, jobId, "AI_SUGGEST", JSON.stringify({ suggestion, applied: false }));
+      }
       if (!remoteRecordId) throw new WorkflowContractError("Draft is required before applying AI suggestion");
-      await saveDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
-      suggestionApplied = true;
+      await refreshDraft();
+      if (suggestionApplied) await verifyDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
+      else {
+        await saveDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
+        await jobs.resetAfterSuggestion(userId, jobId);
+        suggestionApplied = true;
+        await jobs.setStageOutput(userId, jobId, "AI_SUGGEST", JSON.stringify({ suggestion, applied: true }));
+      }
       await updatePage(notionClient, page!, propertyMapping, { status: "처리중", suggestion, lastError: "" });
       await jobs.completeStage(userId, jobId, "AI_SUGGEST", "AI_SUGGESTED", JSON.stringify({ suggestion, applied: true }));
     } catch (error) {
@@ -309,13 +350,18 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
     }
   }
 
-  if (!remoteRecordId || suggestion === undefined) {
-    await fail("AI_SUGGEST", new WorkflowContractError("Draft and AI suggestion are required before applying suggestion"));
-    return;
-  }
-  if (!suggestionApplied) {
+  if (suggestionStep?.status === "SUCCEEDED" && suggestion !== undefined && !suggestionApplied) {
+    if (!remoteRecordId) {
+      await fail("AI_SUGGEST", new WorkflowContractError("Draft is required before applying AI suggestion"));
+      return;
+    }
     try {
+      await refreshDraft();
       await saveDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
+      await jobs.resetAfterSuggestion(userId, jobId);
+      suggestionApplied = true;
+      await jobs.setStageOutput(userId, jobId, "AI_SUGGEST", JSON.stringify({ suggestion, applied: true }));
+      await updatePage(notionClient, page!, propertyMapping, { status: "처리중", suggestion, lastError: "" });
     } catch (error) {
       await fail("AI_SUGGEST", error);
       return;
@@ -326,16 +372,30 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
     message.ack();
     return;
   }
+  if (!remoteRecordId || suggestion === undefined || !suggestionApplied) {
+    await fail("AI_SUGGEST", new WorkflowContractError("Applied AI suggestion is required before scoring"));
+    return;
+  }
 
   current = await jobs.getDetails(userId, jobId);
   const scoreStep = current?.steps.find((step) => step.stage === "AI_SCORE");
+  let score = stringOutput(scoreStep, "score");
   if (scoreStep?.status !== "SUCCEEDED") {
-    if (!await jobs.beginStage(userId, jobId, "AI_SCORE")) {
+    if (scoreStep?.status === "RUNNING" && scoreStep.runId === message.id && score === undefined) {
+      await fail("AI_SCORE", new AmbiguousAiResultError("AI score result is ambiguous after interruption"));
+      return;
+    }
+    if (!await jobs.beginStage(userId, jobId, "AI_SCORE", message.id)) {
       message.ack();
       return;
     }
     try {
-      const score = await requestScore(schoolClient, context.job.targetDate);
+      await refreshDraft();
+      await verifyDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
+      if (score === undefined) {
+        score = await requestScore(schoolClient, context.job.targetDate);
+        await jobs.setStageOutput(userId, jobId, "AI_SCORE", JSON.stringify({ score }));
+      }
       await updatePage(notionClient, page!, propertyMapping, { status: "처리중", score, lastError: "" });
       await jobs.completeStage(userId, jobId, "AI_SCORE", "AI_SCORED", JSON.stringify({ score }));
     } catch (error) {
@@ -356,12 +416,13 @@ async function process(message: Message<unknown>, env: Env): Promise<void> {
   current = await jobs.getDetails(userId, jobId);
   const saveStep = current?.steps.find((step) => step.stage === "SAVE");
   if (saveStep?.status !== "SUCCEEDED") {
-    if (!await jobs.beginStage(userId, jobId, "SAVE")) {
+    if (!await jobs.beginStage(userId, jobId, "SAVE", message.id)) {
       message.ack();
       return;
     }
     try {
-      const result = await saveDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
+      await refreshDraft();
+      const result = await verifyDraft(schoolClient, remoteRecordId, suggestion, context.job.targetDate);
       await updatePage(notionClient, page!, propertyMapping, { status: "완료", remoteId: String(result.id), lastError: "" });
       await jobs.completeStage(userId, jobId, "SAVE", "SAVED", JSON.stringify({ remoteRecordId: String(result.id), content: result.content }), String(result.id));
     } catch (error) {

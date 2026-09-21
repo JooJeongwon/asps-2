@@ -87,3 +87,21 @@ test("AI endpoints use the website streaming contract", async () => {
   assert.ok(requests.every((request) => new URL(request.url).searchParams.get("stream") === "1"));
   assert.ok(requests.every((request) => request.headers.get("accept") === "text/event-stream"));
 });
+
+test("ambiguous AI failures are not automatically retried", async () => {
+  const networkClient = new ThousandSchoolClient({
+    baseUrl: "https://api.example.invalid",
+    fetcher: fetcher(() => { throw new TypeError("network failed"); }),
+  });
+  await assert.rejects(networkClient.organizeDailySnippet("raw", true), (error: unknown) => {
+    return error instanceof ThousandSchoolApiError && error.code === "NETWORK_ERROR" && !error.retryable;
+  });
+
+  const upstreamClient = new ThousandSchoolClient({
+    baseUrl: "https://api.example.invalid",
+    fetcher: fetcher(() => new Response(null, { status: 503 })),
+  });
+  await assert.rejects(upstreamClient.getDailySnippetFeedback(true), (error: unknown) => {
+    return error instanceof ThousandSchoolApiError && error.code === "UPSTREAM_ERROR" && !error.retryable;
+  });
+});
