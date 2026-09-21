@@ -10,7 +10,7 @@ import {
   type ThousandSchoolWorkflowClient,
 } from "../src/workflows/thousand-school.ts";
 
-const targetDate = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const targetDate = new Date(Date.now()).toISOString().slice(0, 10);
 
 const response = (content: string, date = targetDate) => ({
   id: 101,
@@ -74,6 +74,17 @@ test("workflow rejects a non-current date before calling 1000.school", async () 
     (error: unknown) => error instanceof WorkflowContractError,
   );
   assert.deepEqual(api.calls, []);
+});
+
+test("08:30 KST still accepts the previous calendar date", async (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-09-21T23:30:00.000Z"));
+  const api = client();
+  api.createDailySnippet = async (content) => { api.calls.push("create"); return response(content, "2026-09-21"); };
+
+  const draft = await ensureDraft(api, { content: "raw content", targetDate: "2026-09-21", remoteRecordId: null });
+
+  assert.equal(draft.date, "2026-09-21");
+  assert.deepEqual(api.calls, ["page-data", "create"]);
 });
 
 test("final verification never overwrites changed remote content", async () => {

@@ -24,7 +24,7 @@ function assertDate(actual: string, expected: string, stage: string): void {
 }
 
 function assertCurrentDate(targetDate: string): void {
-  const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const today = new Date(Date.now()).toISOString().slice(0, 10);
   if (targetDate !== today) throw new WorkflowContractError("1000.school only accepts today's daily snippet");
 }
 
